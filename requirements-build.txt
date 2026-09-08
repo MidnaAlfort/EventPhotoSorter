@@ -1,0 +1,2 @@
+# Install after requirements.txt. License collection uses installed package metadata.
+pyinstaller>=6.22,<7

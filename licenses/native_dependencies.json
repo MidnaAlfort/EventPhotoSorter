@@ -1,0 +1,417 @@
+{
+  "policy": "Windows 10/11; Python/wheels and Visual Studio 2022 REDIST only; system libraries excluded",
+  "binaries": [
+    {
+      "file": "torch/lib/torch.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/torch.dll",
+      "sha256": "8a6cf8bbf54cb7653c8140b524de673e7785e16053df53921da04845e995c9db"
+    },
+    {
+      "file": "torch/lib/c10.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/c10.dll",
+      "sha256": "f7a31f005bf90149972a93049224a7ea780f289bfd54ff2f3009c4015b47409a"
+    },
+    {
+      "file": "torch/lib/torch_cpu.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/torch_cpu.dll",
+      "sha256": "beead1d98b0d1dd23bbc570f54e919b55adb7618baf5b434bce4c8d83e21ffb3"
+    },
+    {
+      "file": "torch/lib/uv.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/uv.dll",
+      "sha256": "fa569e682fc5fb7a8eb94c6829af9f30a569748dbbc6bce39735d48bc960bcf8"
+    },
+    {
+      "file": "torch/lib/shm.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/shm.dll",
+      "sha256": "1836cfb7eb2fa71d9f56249a1b7ad86b7b69254f475c16f41e063aaa4ea05809"
+    },
+    {
+      "file": "torch/lib/libiomp5md.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/libiomp5md.dll",
+      "sha256": "ee527c978999653eb18edc3ef372b4e95d4ad9a7691b6d08817be9d38c7d0a02"
+    },
+    {
+      "file": "torch/lib/libiompstubs5md.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/libiompstubs5md.dll",
+      "sha256": "6920b610c0bd16b3acfc247791e986bfc36f247994ef0f6713fbbe1fb0e49214"
+    },
+    {
+      "file": "torch/bin/protoc.exe",
+      "source": "python-environment/Lib/site-packages/torch/bin/protoc.exe",
+      "sha256": "6f81a40f30cf6aceb906855fa943df86f842eaba211413a13a5e88564fc338ff"
+    },
+    {
+      "file": "torch/lib/torch_python.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/torch_python.dll",
+      "sha256": "99c9b6ccfa750e7f5281347ddc1468544b3ce5f92851a0236713b1614505333a"
+    },
+    {
+      "file": "torch/lib/torch_global_deps.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/torch_global_deps.dll",
+      "sha256": "b56491e5719a8d17e4ce0da11cfc0cf2ab02af5be2568126aef52e9970b3aa8e"
+    },
+    {
+      "file": "python312.dll",
+      "source": "python-runtime/python312.dll",
+      "sha256": "93488fa7e631cc0a2bd808b9eee8617280ee9b6ff499ab424a1a1cbf24d77dc7"
+    },
+    {
+      "file": "numpy.libs/msvcp140-a4c2229bdc2a2a630acdc095b4d86008.dll",
+      "source": "Visual Studio 2022/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll",
+      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
+    },
+    {
+      "file": "numpy.libs/libscipy_openblas64_-327b2e0bcffce2882e0dc04cdeb4eaa6.dll",
+      "source": "python-environment/Lib/site-packages/numpy.libs/libscipy_openblas64_-327b2e0bcffce2882e0dc04cdeb4eaa6.dll",
+      "sha256": "327b2e0bcffce2882e0dc04cdeb4eaa6382ed4dba29871b6176fa157782f484a"
+    },
+    {
+      "file": "vcruntime140.dll",
+      "source": "Visual Studio 2022/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140.dll",
+      "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+    },
+    {
+      "file": "vcruntime140_1.dll",
+      "source": "Visual Studio 2022/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140_1.dll",
+      "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
+    },
+    {
+      "file": "msvcp140.dll",
+      "source": "Visual Studio 2022/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll",
+      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
+    },
+    {
+      "file": "_lzma.pyd",
+      "source": "python-runtime/DLLs/_lzma.pyd",
+      "sha256": "b095fa2eac97496b515031fbea5737988b18deee86a11f2784f5a551732ddc0c"
+    },
+    {
+      "file": "_bz2.pyd",
+      "source": "python-runtime/DLLs/_bz2.pyd",
+      "sha256": "160b5218c2035cccbaab9dc4ca26d099f433dcb86dbbd96425c933dc796090df"
+    },
+    {
+      "file": "_decimal.pyd",
+      "source": "python-runtime/DLLs/_decimal.pyd",
+      "sha256": "b7f9603f98ef232a2c5bce7001d842c01d76ed35171afbd898e6d17facf38b56"
+    },
+    {
+      "file": "_hashlib.pyd",
+      "source": "python-runtime/DLLs/_hashlib.pyd",
+      "sha256": "b4cec162b985d34ab768f66e8fa41ed28dc2f273fde6670eeace1d695789b137"
+    },
+    {
+      "file": "unicodedata.pyd",
+      "source": "python-runtime/DLLs/unicodedata.pyd",
+      "sha256": "64a162d6b11ba10cb11509f3cc445f17beb7acfd064f030b4d59faa1c9894b29"
+    },
+    {
+      "file": "select.pyd",
+      "source": "python-runtime/DLLs/select.pyd",
+      "sha256": "dca5e6d39c5094ce599143cb82f6d8470f0c2a4ce4443499e73f32ed13333fd0"
+    },
+    {
+      "file": "_socket.pyd",
+      "source": "python-runtime/DLLs/_socket.pyd",
+      "sha256": "ce3090fff8575b21287df5fc69ae98806646fc302eefadf85e369ad3debad92b"
+    },
+    {
+      "file": "_overlapped.pyd",
+      "source": "python-runtime/DLLs/_overlapped.pyd",
+      "sha256": "2af91c5ab6f05c4be357b93673920eccf3ebcad5e5ec6b0a7b53ef94a5feaad7"
+    },
+    {
+      "file": "_ssl.pyd",
+      "source": "python-runtime/DLLs/_ssl.pyd",
+      "sha256": "61f00b0543464bba61e0bd1128118326c9bd0cdc592854dd1a31c3d6d8df2b83"
+    },
+    {
+      "file": "_queue.pyd",
+      "source": "python-runtime/DLLs/_queue.pyd",
+      "sha256": "bbe7736caed8c17c97e2b156f686521a788c25f2004aae34ab0c282c24d57da7"
+    },
+    {
+      "file": "_ctypes.pyd",
+      "source": "python-runtime/DLLs/_ctypes.pyd",
+      "sha256": "8250b4c102abd1dba49fc5b52030caa93ca34e00b86cee6547cc0a7f22326807"
+    },
+    {
+      "file": "_multiprocessing.pyd",
+      "source": "python-runtime/DLLs/_multiprocessing.pyd",
+      "sha256": "a197f3485bbe30b3a1612ea2198cef121af440ba799fd6cbf0ad3493150df3ca"
+    },
+    {
+      "file": "pyexpat.pyd",
+      "source": "python-runtime/DLLs/pyexpat.pyd",
+      "sha256": "b6670d91a76e9f00609752ab19aae0b1ebe00d24d9d8d22068989bbb24d0aa44"
+    },
+    {
+      "file": "_asyncio.pyd",
+      "source": "python-runtime/DLLs/_asyncio.pyd",
+      "sha256": "184fc13677c7856e7a8b31dfe79ce68dcea10cdf83a205de2b0d5497fb0ffdf3"
+    },
+    {
+      "file": "_wmi.pyd",
+      "source": "python-runtime/DLLs/_wmi.pyd",
+      "sha256": "b0ed1c62b73b291a1b57e3d8882cc269b2fcbb1253f2947da18d9036e0c985d9"
+    },
+    {
+      "file": "tokenizers/tokenizers.pyd",
+      "source": "python-environment/Lib/site-packages/tokenizers/tokenizers.pyd",
+      "sha256": "7acb83f5b89136597e0d14b788d82917bf2870df94575bf77e12731c4e49c4df"
+    },
+    {
+      "file": "safetensors/_safetensors_rust.pyd",
+      "source": "python-environment/Lib/site-packages/safetensors/_safetensors_rust.pyd",
+      "sha256": "80a2b3f7658854ade855c5fb6192ee38fe2c7fbfd38d1c7c1f4d2c44f67125e4"
+    },
+    {
+      "file": "numpy/_core/_multiarray_umath.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/_core/_multiarray_umath.cp312-win_amd64.pyd",
+      "sha256": "63169915c2d78aba0984bd5e235a92936c319d228c35919a41758b20cd8683c1"
+    },
+    {
+      "file": "numpy/linalg/_umath_linalg.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/linalg/_umath_linalg.cp312-win_amd64.pyd",
+      "sha256": "26315b00a500ebfa5723776853ba651e3cae05c22144f41305ba0cf3b29b9542"
+    },
+    {
+      "file": "PIL/_webp.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/PIL/_webp.cp312-win_amd64.pyd",
+      "sha256": "9823cebb84f425af3ac1e7437259bc176e7ad7e25d7fa829b0e1a3e55c11be70"
+    },
+    {
+      "file": "PIL/_imagingtk.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/PIL/_imagingtk.cp312-win_amd64.pyd",
+      "sha256": "690cc1cae4a2dc8594a342b9241e691dcc89d81dad4cddcefdf285275365a2b1"
+    },
+    {
+      "file": "PIL/_avif.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/PIL/_avif.cp312-win_amd64.pyd",
+      "sha256": "6731dce52baab0b96b0eeb3c664844b5b42c2168ea8668af2430e2fbdd2dfbd8"
+    },
+    {
+      "file": "PIL/_imagingcms.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/PIL/_imagingcms.cp312-win_amd64.pyd",
+      "sha256": "c89c633ae1bf3f26a327d14ff688db66628e19c9866ab925479f27dcb60a2d6f"
+    },
+    {
+      "file": "PIL/_imagingmath.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/PIL/_imagingmath.cp312-win_amd64.pyd",
+      "sha256": "82ac45c41a008854d05f67deda298b65a7bed850d0d79a3af861ed583f6e7d62"
+    },
+    {
+      "file": "PIL/_imaging.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/PIL/_imaging.cp312-win_amd64.pyd",
+      "sha256": "c8c519ec72bf75b2945b4fc4afa854af2fca8b970a403134f9ddda3e164d85e9"
+    },
+    {
+      "file": "PIL/_imagingft.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/PIL/_imagingft.cp312-win_amd64.pyd",
+      "sha256": "77c6d37de41733df40fb36d9af47644989ac17da036515e759303969edb22c48"
+    },
+    {
+      "file": "yaml/_yaml.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/yaml/_yaml.cp312-win_amd64.pyd",
+      "sha256": "4fd0e84f50261ed0886cffcdd8008b055af3352546e649c3d741b50eae1f9b5f"
+    },
+    {
+      "file": "torchvision/image.pyd",
+      "source": "python-environment/Lib/site-packages/torchvision/image.pyd",
+      "sha256": "810ed317fc5503eaba4e73cfc45ce69936f77181922c171b609f07e7aa2e946b"
+    },
+    {
+      "file": "_uuid.pyd",
+      "source": "python-runtime/DLLs/_uuid.pyd",
+      "sha256": "869361adf2be930e5c8b492fa2116dc0d0edccbf2c231d39c859ce320be27b31"
+    },
+    {
+      "file": "torchvision/_C.pyd",
+      "source": "python-environment/Lib/site-packages/torchvision/_C.pyd",
+      "sha256": "f791826e6281dfb470464cea2dc332febc2cd14a8329bc2853dd9bc7ce5c07f1"
+    },
+    {
+      "file": "_elementtree.pyd",
+      "source": "python-runtime/DLLs/_elementtree.pyd",
+      "sha256": "c07f2827542a392fde5fa9fe4d079c41d108c2b36c53c4035d1209f67c73e8d2"
+    },
+    {
+      "file": "_sqlite3.pyd",
+      "source": "python-runtime/DLLs/_sqlite3.pyd",
+      "sha256": "fef8e9f427b47e7758658a876ff1f2d718119af54dbb0498e14c8234571942df"
+    },
+    {
+      "file": "markupsafe/_speedups.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/markupsafe/_speedups.cp312-win_amd64.pyd",
+      "sha256": "6107cd12e027357194947a9e4881aecf468790d2cb6ef4dd6ec77f5736232098"
+    },
+    {
+      "file": "numpy/random/mtrand.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/random/mtrand.cp312-win_amd64.pyd",
+      "sha256": "fa7cbd1e1aa591b3b7ea291d63aa5c49ed37383ea7655d96a2ff44c4f2e90fc3"
+    },
+    {
+      "file": "numpy/random/bit_generator.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/random/bit_generator.cp312-win_amd64.pyd",
+      "sha256": "1c05dbf7c50d6a885e8f35fe360377368d12f4718ec0feb6125c71b8d16c20ea"
+    },
+    {
+      "file": "numpy/random/_sfc64.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/random/_sfc64.cp312-win_amd64.pyd",
+      "sha256": "ebf00341da63fc784cc5e71e1497293cd3be45e921c88d002ed7340c019ebada"
+    },
+    {
+      "file": "numpy/random/_philox.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/random/_philox.cp312-win_amd64.pyd",
+      "sha256": "e482e082620a583b6a0d01171147f6ff7cdee3b1d8f6d15e277ad6efbf14ee40"
+    },
+    {
+      "file": "numpy/random/_pcg64.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/random/_pcg64.cp312-win_amd64.pyd",
+      "sha256": "c21833f36728e5aa2db7b5c2fb290f6e62143c0167a317126b4c7a31380d4917"
+    },
+    {
+      "file": "numpy/random/_mt19937.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/random/_mt19937.cp312-win_amd64.pyd",
+      "sha256": "d202ea26fd003eb916a640b2e931b20512f65aad0315f4f31d4e65c9d0e5f58e"
+    },
+    {
+      "file": "numpy/random/_generator.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/random/_generator.cp312-win_amd64.pyd",
+      "sha256": "f39f29e88e2aacc3b280d4c8a44a189a48722b1c7414de516d6d1c4d13b13495"
+    },
+    {
+      "file": "numpy/random/_common.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/random/_common.cp312-win_amd64.pyd",
+      "sha256": "eaf315793a49b211515951203a1a0e2d511af930e024b6c93dee7b3e5ab2aed3"
+    },
+    {
+      "file": "numpy/random/_bounded_integers.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/random/_bounded_integers.cp312-win_amd64.pyd",
+      "sha256": "b15875ad2ded03fc5f555bf8d4781b526a070e9aed72b775499b875a9a6d4965"
+    },
+    {
+      "file": "torch/_C.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/torch/_C.cp312-win_amd64.pyd",
+      "sha256": "e436e07e4794ffbe04ff1ee84a0e2c15e83d6dee4cd916c77cb5322086363f63"
+    },
+    {
+      "file": "hf_xet/hf_xet.pyd",
+      "source": "python-environment/Lib/site-packages/hf_xet/hf_xet.pyd",
+      "sha256": "ea8f5ddb1ae42adf5e4d376ec27b7f1ea1fe843e15f5d7a9e45fe1298ca4fd4c"
+    },
+    {
+      "file": "_zoneinfo.pyd",
+      "source": "python-runtime/DLLs/_zoneinfo.pyd",
+      "sha256": "a18b40f60f5a3b41a618fbbac652d3847348063081c6bf56752ff23e973c7790"
+    },
+    {
+      "file": "pydantic_core/_pydantic_core.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/pydantic_core/_pydantic_core.cp312-win_amd64.pyd",
+      "sha256": "775bcb0ce04b93cb18410bb28e589e1dd6a441f1f93007d2dc80a305d70c74c9"
+    },
+    {
+      "file": "regex/_regex.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/regex/_regex.cp312-win_amd64.pyd",
+      "sha256": "9f936d03fd6b5cd95bcd872bc9d299ca0f7ecea8608fb2f77dcbcdf4f37c20e9"
+    },
+    {
+      "file": "numpy/_core/_multiarray_tests.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/_core/_multiarray_tests.cp312-win_amd64.pyd",
+      "sha256": "47ff40012ce4bbb2c2b4f698fa60f0551d35d817a39316d022aefaaa48e1987e"
+    },
+    {
+      "file": "numpy/fft/_pocketfft_umath.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/numpy/fft/_pocketfft_umath.cp312-win_amd64.pyd",
+      "sha256": "440a855aba8838cd5c4e22b2618cd9f691aea11130261a9318cc48050e76720e"
+    },
+    {
+      "file": "jiter/jiter.cp312-win_amd64.pyd",
+      "source": "python-environment/Lib/site-packages/jiter/jiter.cp312-win_amd64.pyd",
+      "sha256": "d28a3206218fea8f94ce8154cb49c3499bde0b50d71d04ecea0f3873df8408e9"
+    },
+    {
+      "file": "_tkinter.pyd",
+      "source": "python-runtime/DLLs/_tkinter.pyd",
+      "sha256": "2cad195ba200cd94702403559323c7abf3772a20203a11beae03770a04437de2"
+    },
+    {
+      "file": "MSVCP140_ATOMIC_WAIT.dll",
+      "source": "Visual Studio 2022/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_atomic_wait.dll",
+      "sha256": "640b2aefced484d0368eea5bdd06addd0658a3a70a49256e560d6923b404a479"
+    },
+    {
+      "file": "libcrypto-3.dll",
+      "source": "python-runtime/DLLs/libcrypto-3.dll",
+      "sha256": "4e5d5d20d6d31e72ab341c81e97b89e514326c4c861b48638243bdf0918cfa43"
+    },
+    {
+      "file": "libssl-3.dll",
+      "source": "python-runtime/DLLs/libssl-3.dll",
+      "sha256": "2e4d35b681a172d3298caf7dc670451be7a8ba27c26446efc67470742497a950"
+    },
+    {
+      "file": "libffi-8.dll",
+      "source": "python-runtime/DLLs/libffi-8.dll",
+      "sha256": "eff52743773eb550fcc6ce3efc37c85724502233b6b002a35496d828bd7b280a"
+    },
+    {
+      "file": "python3.dll",
+      "source": "python-runtime/python3.dll",
+      "sha256": "d52baca085f88b40f30c855e6c55791e5375c80f60f94057061e77e33f4cad7a"
+    },
+    {
+      "file": "torchvision/python312.dll",
+      "source": "python-environment/Lib/site-packages/torchvision/python312.dll",
+      "sha256": "72c1bea78e0c49f746889a3af8c4973e044e50e319c1c976dd98059a403404da"
+    },
+    {
+      "file": "torchvision/jpeg8.dll",
+      "source": "python-environment/Lib/site-packages/torchvision/jpeg8.dll",
+      "sha256": "e7c16e1e0330d747aec1cd161f6d54816f71e4172c14f41f76d5a2b2191c93a3"
+    },
+    {
+      "file": "torchvision/libwebp.dll",
+      "source": "python-environment/Lib/site-packages/torchvision/libwebp.dll",
+      "sha256": "e9ebf8ca707ad2e964f8cdd9892c9e536517856696547c4671f62a7cd4d394f6"
+    },
+    {
+      "file": "torchvision/libpng16.dll",
+      "source": "python-environment/Lib/site-packages/torchvision/libpng16.dll",
+      "sha256": "5befe1f2a614da8049da94ef252a9300d1bc75a9b2468750cdbe817f9c60d237"
+    },
+    {
+      "file": "sqlite3.dll",
+      "source": "python-runtime/DLLs/sqlite3.dll",
+      "sha256": "2f9c9940e87840ff1b5c4922d8b73c7302d1b12badc860990dfebdf77b4140ee"
+    },
+    {
+      "file": "tcl86t.dll",
+      "source": "python-runtime/DLLs/tcl86t.dll",
+      "sha256": "22a1746363151a19e02f92f9b7bc4849038783be34c04f311a11df69fdc1a039"
+    },
+    {
+      "file": "tk86t.dll",
+      "source": "python-runtime/DLLs/tk86t.dll",
+      "sha256": "f44fa94865d17e4f0266c8f9a1dd89825d8a0c6c3a63cf4192fc08c8796acabf"
+    },
+    {
+      "file": "torchvision/zlib.dll",
+      "source": "python-environment/Lib/site-packages/torchvision/zlib.dll",
+      "sha256": "a2e123cc624634d08200b4e5ee6a2828d2df88fd9573b5b5fdd9da336f5738a6"
+    },
+    {
+      "file": "torchvision/libsharpyuv.dll",
+      "source": "python-environment/Lib/site-packages/torchvision/libsharpyuv.dll",
+      "sha256": "5b9781467bae1b30a5df0707ab745730c98ad96a1db2a825b8f135f3cd6cf946"
+    },
+    {
+      "file": "zlib1.dll",
+      "source": "python-runtime/DLLs/zlib1.dll",
+      "sha256": "84cc14c704067bffd2b4dd411abe752eb492431814cf9ac13417d061a3db0ec3"
+    }
+  ],
+  "excluded_system_libraries": [],
+  "executable_sha256": "baa94a78c6bf6a8c4aca26b8ecfe7d085cc0677404ad02d27b3be1647b6b2474"
+}

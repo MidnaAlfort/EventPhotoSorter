@@ -1,0 +1,57 @@
+[
+  {
+    "file": "tokenizers/LICENSE",
+    "url": "https://raw.githubusercontent.com/huggingface/tokenizers/v0.22.2/LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  {
+    "file": "dinov2/LICENSE",
+    "url": "https://raw.githubusercontent.com/facebookresearch/dinov2/main/LICENSE",
+    "sha256": "600cc67cc4cb2f5ea317dcfc687ad1c74dc4bec8782bbe9db0afd83513b935b7"
+  },
+  {
+    "file": "grounding-dino/LICENSE",
+    "url": "https://raw.githubusercontent.com/IDEA-Research/GroundingDINO/main/LICENSE",
+    "sha256": "b403c98ec1ffaccb0124632592a3d99642cddc3031ca412b402568e6c06c202a"
+  },
+  {
+    "file": "openssl/LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.0.15/LICENSE.txt",
+    "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+  },
+  {
+    "file": "libjpeg-turbo/LICENSE.md",
+    "url": "https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/main/LICENSE.md",
+    "sha256": "ba6bceebcba0fdd35488477c2cca8c4632ce82c74dbfbc87d886ce6fc4433579"
+  },
+  {
+    "file": "libjpeg-turbo/README.ijg",
+    "url": "https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/main/README.ijg",
+    "sha256": "75815e3bf6484201a3c3d17a1bbf10f2e8e3237f84df10a2357ea896db2a81d6"
+  },
+  {
+    "file": "libpng/LICENSE",
+    "url": "https://raw.githubusercontent.com/pnggroup/libpng/libpng16/LICENSE",
+    "sha256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526"
+  },
+  {
+    "file": "libwebp/COPYING",
+    "url": "https://raw.githubusercontent.com/webmproject/libwebp/main/COPYING",
+    "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf"
+  },
+  {
+    "file": "libwebp/PATENTS",
+    "url": "https://raw.githubusercontent.com/webmproject/libwebp/main/PATENTS",
+    "sha256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c"
+  },
+  {
+    "file": "zlib/LICENSE",
+    "url": "https://raw.githubusercontent.com/madler/zlib/master/LICENSE",
+    "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+  },
+  {
+    "file": "mpl-2.0/LICENSE",
+    "url": "https://www.mozilla.org/media/MPL/2.0/index.txt",
+    "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+  }
+]

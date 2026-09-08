@@ -1,0 +1,44 @@
+# Python environments and generated caches
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+
+# Credentials (keep the configuration template)
+.env
+.env.*
+!.env.example
+api.txt
+
+# Local models, settings, photos and sorting results
+.model_cache/
+.test_output/
+アプリデータ/
+参考画像/
+作業フォルダ/
+振り分け後/
+処理記録/
+/!素材/
+.photo_sorter_state.json
+.photo_sorter_state.sqlite3*
+
+# Builds and distribution packages
+build/
+build_gpu/
+dist/
+配布用/
+公開用/
+*.exe
+*.whl
+
+# Experiments, copied photos, downloaded models and build backups.
+# Keep only the small Markdown reports linked from README.md.
+/artifacts/*
+!/artifacts/*.md
