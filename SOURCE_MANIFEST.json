@@ -9,7 +9,7 @@
   },
   {
     "path": "docs/Readme.txt",
-    "sha256": "c258c66b8c0faa7f5e886d9fdd7b5f0c240d189a6804079772a6eec7be168de5"
+    "sha256": "ff9a0018627ba7c75906046560d0888c96ee273cd34ce7719b52ef5b495a1d2d"
   },
   {
     "path": "LICENSE",
@@ -1442,5 +1442,9 @@
   {
     "path": "licenses/upstream/zlib/LICENSE",
     "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+  },
+  {
+    "path": ".gitattributes",
+    "sha256": "d8fb0de4792538f93822b2c0d235604921299d5e54a3d6ec7a6cb34536e8bf1e"
   }
 ]
