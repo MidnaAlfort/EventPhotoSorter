@@ -5,7 +5,7 @@
   },
   {
     "path": "README.md",
-    "sha256": "fa527d53b9f71017632bba5f7c2f8f95fcfb67ad5bdbbe42d0ba1b5edd84d189"
+    "sha256": "ae3bfde303396357341eb5a74c5c9f81c44053d37ffadda40553c64d7c048bb8"
   },
   {
     "path": "docs/Readme.txt",
@@ -253,7 +253,7 @@
   },
   {
     "path": "tools/export_source.py",
-    "sha256": "a8b6d0edeac1e28afce0c7b7489678e73ab240e095190820283991ee94611d9a"
+    "sha256": "7ffdacd0ce1cf147be593dcafae1140b268f2410c26e3af0964191de5891de1c"
   },
   {
     "path": "tools/fetch_upstream_licenses.py",

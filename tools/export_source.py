@@ -76,8 +76,8 @@ def initialize_public_repository(folder: Path) -> None:
         return subprocess.check_output(["git", "-C", str(folder), *args], env=env)
     git("init", "--initial-branch=main", "--template=")
     git("config", "user.name", "MidnaUdon")
-    # Do not copy private developer mail or claim an unverified GitHub account.
-    git("config", "user.email", "noreply@example.invalid")
+    # Public GitHub noreply address supplied by the repository owner.
+    git("config", "user.email", "18381369+MidnaAlfort@users.noreply.github.com")
     git("config", "core.autocrlf", "false")
     git("add", "--force", "--all")
     git("-c", "commit.gpgsign=false", "commit", "-m", "Initial public source release")
