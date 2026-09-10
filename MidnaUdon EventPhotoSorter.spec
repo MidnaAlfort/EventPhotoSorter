@@ -22,7 +22,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets/app_icon.png', 'assets'), ('RUNTIME_TERMS.txt', '.')],
+    datas=[('assets/app_icon.png', 'assets'), ('assets/app_icon.ico', 'assets'), ('RUNTIME_TERMS.txt', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

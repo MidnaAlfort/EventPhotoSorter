@@ -91,11 +91,8 @@ class SorterApp(tk.Tk):
         self.after(100, self._poll_events)
 
     def _set_window_icon(self) -> None:
-        try:
-            self._icon_image = tk.PhotoImage(file=str(bundled_resource("assets/app_icon.png")))
-            self.iconphoto(True, self._icon_image)
-        except (tk.TclError, OSError):
-            self._icon_image = None
+        from .window_icon import set_window_icon
+        set_window_icon(self)
 
     def _build_ui(self) -> None:
         outer = ttk.Frame(self, padding=16)

@@ -10,6 +10,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $PackageDir "MidnaUdon EventPhotoSor
     --name "MidnaUdon EventPhotoSorter_GPU" `
     --icon (Join-Path $ProjectRoot "assets\app_icon.ico") `
     --add-data "$(Join-Path $ProjectRoot 'assets\app_icon.png');assets" `
+    --add-data "$(Join-Path $ProjectRoot 'assets\app_icon.ico');assets" `
     --add-data "$(Join-Path $ProjectRoot 'RUNTIME_TERMS.txt');." `
     --collect-submodules "transformers.models.dinov2" `
     --collect-submodules "transformers.models.grounding_dino" `

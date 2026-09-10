@@ -6,14 +6,14 @@
 
 <img src="assets/app_icon.png" alt="ミドナうどん工房" width="180">
 
-GitHub（仮URL・公開準備中）：https://github.com/YOUR_GITHUB_ACCOUNT/MidnaUdon-EventPhotoSorter
-
-> このURLは仮です。公開時に `YOUR_GITHUB_ACCOUNT` を実際のアカウント名へ置き換えてください。
+※本ツールは私が関わっている学園型イベントや、
+フレンドが関わっている学園型イベントでの写真選定を楽にする目的として制作したものを、せっかくなので公開したものです。
+個別の導入支援や操作案内などのサポートは行っておりません、ご了承ください。
 
 ## まず使いたい方へ
 
 EXE配布版をフォルダごと展開して、`MidnaUdon EventPhotoSorter.exe` を起動してください。Pythonのインストールは不要です。
-一般向けの手順・APIキーの準備・利用上の注意は [Readme.txt](Readme.txt) にまとめています。
+一般向けの手順・APIキーの準備・利用上の注意は [利用者向け説明書](docs/Readme.txt) にまとめています。
 
 1. `参考画像/イベント名/区分/人物名/` に各人物の単独写真を入れます。区分は参加者・スタッフなど任意です。
 2. `作業フォルダ` に写真を入れます。**成功した写真は移動するため、初めはコピーした写真で試してください。**
@@ -140,4 +140,4 @@ MidnaUdon / ミドナうどん工房
 - [X (Twitter)](https://x.com/Midna_Alfort)
 - [BOOTH](https://midna-alfort.booth.pm/)
 
-2026/09/07：Ver1.00。シンプル設定・APIキー保存・任意の記録保存・工房ロゴに対応。
+2026/09/10：Ver1.00。

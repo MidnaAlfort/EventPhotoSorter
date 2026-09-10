@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.release_policy import sha256, verify_executable
 
-DOCUMENTS = ("Readme.txt", "LICENSE", "THIRD_PARTY_NOTICES.md", "ASSET_NOTICE.md", "RUNTIME_TERMS.txt")
+DOCUMENTS = ("docs/Readme.txt", "LICENSE", "THIRD_PARTY_NOTICES.md", "ASSET_NOTICE.md", "RUNTIME_TERMS.txt")
 EMPTY_FOLDERS = ("参考画像", "作業フォルダ", "振り分け後")
 KEY_PATTERN = re.compile(rb"sk-(?:proj-)?[A-Za-z0-9_-]{24,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 MODELS = (
@@ -31,8 +31,7 @@ def checked_text(source):
 
 def release_plan(root, exe):
     plan = [(exe, Path(exe.name))]
-    plan += [(root / name, Path(name)) for name in DOCUMENTS]
-    plan.append((root / "配布用_使い方.txt", Path("使い方.txt")))
+    plan += [(root / name, Path(name).name) for name in DOCUMENTS]
     plan += [(p, p.relative_to(root)) for p in sorted((root / "licenses").rglob("*")) if p.is_file()]
     generated = {Path(".env"): b"OPENAI_API_KEY=\n"}
     hubs = [root / ".model_cache/hub", root / "アプリデータ/model_cache/hub", root / "配布用/MidnaUdon EventPhotoSorter/アプリデータ/model_cache/hub"]

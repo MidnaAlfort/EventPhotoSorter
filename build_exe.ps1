@@ -43,10 +43,10 @@ Copy-Item -LiteralPath (Join-Path $DistRoot "MidnaUdon EventPhotoSorter.exe") -D
 if (-not (Test-Path -LiteralPath (Join-Path $ResolvedPackageDir ".env"))) {
     Copy-Item -LiteralPath (Join-Path $ProjectRoot ".env.example") -Destination (Join-Path $ResolvedPackageDir ".env")
 }
-Copy-Item -LiteralPath (Join-Path $ProjectRoot "配布用_使い方.txt") -Destination (Join-Path $ResolvedPackageDir "使い方.txt")
+Copy-Item -LiteralPath (Join-Path $ProjectRoot "docs\Readme.txt") -Destination (Join-Path $ResolvedPackageDir "Readme.txt")
 & $Python (Join-Path $ProjectRoot "tools\collect_licenses.py")
 if ($LASTEXITCODE -ne 0) { throw "ライセンス原文の収集に失敗しました。" }
-foreach ($Document in @("Readme.txt", "LICENSE", "THIRD_PARTY_NOTICES.md", "ASSET_NOTICE.md", "RUNTIME_TERMS.txt")) {
+foreach ($Document in @("LICENSE", "THIRD_PARTY_NOTICES.md", "ASSET_NOTICE.md", "RUNTIME_TERMS.txt")) {
     Copy-Item -LiteralPath (Join-Path $ProjectRoot $Document) -Destination $ResolvedPackageDir -Force
 }
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "licenses") -Destination $ResolvedPackageDir -Recurse -Force

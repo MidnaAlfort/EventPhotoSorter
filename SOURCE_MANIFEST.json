@@ -5,15 +5,11 @@
   },
   {
     "path": "README.md",
-    "sha256": "da4effc1969549d571c08365b2f3b687f9f44e4031a94e9be4345bebdcf2bc69"
+    "sha256": "fa527d53b9f71017632bba5f7c2f8f95fcfb67ad5bdbbe42d0ba1b5edd84d189"
   },
   {
-    "path": "Readme.txt",
-    "sha256": "2d071b63777f1daba43389637b3a4e5aeed55cd902467881d3a278a14627d97e"
-  },
-  {
-    "path": "配布用_使い方.txt",
-    "sha256": "2d071b63777f1daba43389637b3a4e5aeed55cd902467881d3a278a14627d97e"
+    "path": "docs/Readme.txt",
+    "sha256": "c258c66b8c0faa7f5e886d9fdd7b5f0c240d189a6804079772a6eec7be168de5"
   },
   {
     "path": "LICENSE",
@@ -57,15 +53,15 @@
   },
   {
     "path": "build_exe.ps1",
-    "sha256": "792d4226e9bcbfe97004badcb8186229a59068f1564d74f8638edfaace369ab2"
+    "sha256": "d0b651f11a1184099ccaa481547dd0a0bc58bef9bb6532b5d657d87ab19ba6d0"
   },
   {
     "path": "build_gpu_exe.ps1",
-    "sha256": "5cfb6e8508403cee8b4b090cba97d3ca824acec642a4cb77f7337d8a7dd0a712"
+    "sha256": "8fd15eff2440c8babfbe7dd4c7849851bdd87c3ea0d1c02fb9bde6820e9eceff"
   },
   {
     "path": "MidnaUdon EventPhotoSorter.spec",
-    "sha256": "7c507c114b415856facf8d29dde74148641fe96e459e8f31e57f747d45963450"
+    "sha256": "a476758bc901f0104f1d46e1dd6e4125b7b16015a8ebb83944bb600ab228c53b"
   },
   {
     "path": "RUNTIME_TERMS.txt",
@@ -137,7 +133,7 @@
   },
   {
     "path": "photo_sorter/gui.py",
-    "sha256": "34c168081fed84961b415b95ff92dd0551689fb412fa886e763d33faaf99a573"
+    "sha256": "24beb1397374bd312e486b924a72453fe4be6d2ba06409b7bc9f1fa5e61e8d6c"
   },
   {
     "path": "photo_sorter/image_utils.py",
@@ -193,11 +189,15 @@
   },
   {
     "path": "photo_sorter/runtime_terms.py",
-    "sha256": "b18c9cdf21100e8f37db5c2339df0ba4d4435f8a1830bb53077eeaf326bd2662"
+    "sha256": "774aaf1ea5b8447504ec248f06fed43637b1eda919689eee0b74e508741ea654"
   },
   {
     "path": "photo_sorter/state_store.py",
     "sha256": "a22af15b793ff0bf384445b65801c192d9155a694c48f1c6e7c8243a3034a0ba"
+  },
+  {
+    "path": "photo_sorter/window_icon.py",
+    "sha256": "624d8c86912365d3e9af28ec23abc117755568becae758fb58951ca39f35be58"
   },
   {
     "path": "tests/test_eventphotosorter.py",
@@ -249,11 +249,11 @@
   },
   {
     "path": "tools/export_release.py",
-    "sha256": "633d14b76d1e10d65cca366dffc0d37c9193fe8873f7b58cf7fe9d4ed23fd0d7"
+    "sha256": "7a530a0934f64c183bd289612b65beb0416022e80a65ffd9b0fc96c2c7456dbc"
   },
   {
     "path": "tools/export_source.py",
-    "sha256": "c983f0317879f503b2bdb4ca13159445be22d92047295bec254a75788247c9a6"
+    "sha256": "a8b6d0edeac1e28afce0c7b7489678e73ab240e095190820283991ee94611d9a"
   },
   {
     "path": "tools/fetch_upstream_licenses.py",
@@ -273,7 +273,7 @@
   },
   {
     "path": "licenses/native_dependencies.json",
-    "sha256": "fc385eabda8c3ea6ec47a0f98df6d99f3d85eabf2dc7c565528ca248925f559a"
+    "sha256": "df90492c15cce2db2528c3e56061e0118f16e27bda0cc2ea09454b23b8a8ede2"
   },
   {
     "path": "licenses/python/altgraph/fb197afb75-LICENSE",

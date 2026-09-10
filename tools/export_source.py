@@ -11,7 +11,7 @@ import subprocess
 import zipfile
 
 ROOT_FILES = (
-    "app.py", "README.md", "Readme.txt", "配布用_使い方.txt", "LICENSE", "ASSET_NOTICE.md",
+    "app.py", "README.md", "docs/Readme.txt", "LICENSE", "ASSET_NOTICE.md",
     "THIRD_PARTY_NOTICES.md", ".gitignore", ".env.example", "requirements.txt",
     "requirements-build.txt", "setup.bat", "start.bat", "setup_gpu.ps1",
     "build_exe.ps1", "build_gpu_exe.ps1", "MidnaUdon EventPhotoSorter.spec", "RUNTIME_TERMS.txt",
