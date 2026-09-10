@@ -158,9 +158,8 @@ Microsoftの同梱部品にはRUNTIME_TERMS.txtの条件が適用されます。
 
 ●ソースコード・更新情報 ------------------------------
 
-GitHub（仮URL・公開準備中）：
-https://github.com/YOUR_GITHUB_ACCOUNT/MidnaUdon-EventPhotoSorter
-※実際の公開先が決まり次第、URLを差し替えます。
+GitHub：
+https://github.com/MidnaAlfort/EventPhotoSorter
 
 ●連絡先 ------------------------------
 X (Twitter)：
