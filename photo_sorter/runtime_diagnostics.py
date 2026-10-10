@@ -1,3 +1,4 @@
+from .log_safety import redact_sensitive_text
 """Offline release smoke test using synthetic pixels, with no API access."""
 import json
 import os
@@ -50,7 +51,7 @@ def write_diagnostics(destination: Path) -> int:
         result["torch"] = torch.__version__
         result["success"] = all(result[key] for key in ("numpy_finite", "facebook/dinov2-small", "IDEA-Research/grounding-dino-tiny"))
     except Exception:
-        result["error"] = traceback.format_exc()
+        result["error"] = redact_sensitive_text(traceback.format_exc())
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return 0 if result["success"] else 1

@@ -54,9 +54,10 @@ class PublicReleaseTests(unittest.TestCase):
         exe.write_bytes(b"verified executable")
         (root / "licenses").mkdir()
         (root / "licenses/native_dependencies.json").write_text(json.dumps({"executable_sha256": hashlib.sha256(exe.read_bytes()).hexdigest()}))
-        (root / "Readme.txt").write_text("public documentation")
-        (root / "配布用_使い方.txt").write_text("public documentation")
-        (root / ".env").write_text("OPENAI_API_KEY=private-local-value")
+        (root / "docs").mkdir()
+        (root / "docs/Readme.txt").write_text("public documentation")
+        (root / "docs/使い方.txt").write_text("public documentation")
+        (root / ".env").write_text("OPENAI_API_KEY=" + "private-" + "local-value")
         private = root / "配布用/MidnaUdon EventPhotoSorter/参考画像"
         private.mkdir(parents=True)
         (private / "private.png").write_bytes(b"personal picture")
@@ -72,9 +73,9 @@ class PublicReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             root, snapshot, models = self.setup_release(base)
-            with patch("tools.export_release.MODELS", models), patch("tools.export_release.DOCUMENTS", ("Readme.txt",)), patch("tools.export_release.verify_executable"):
+            with patch("tools.export_release.MODELS", models), patch("tools.export_release.DOCUMENTS", ("docs/Readme.txt",)), patch("tools.export_release.verify_executable"):
                 folder, zipped = export_release(root, base / "public")
-            self.assertEqual((root / ".env").read_text(), "OPENAI_API_KEY=private-local-value")
+            self.assertEqual((root / ".env").read_text(), "OPENAI_API_KEY=" + "private-" + "local-value")
             self.assertEqual((folder / ".env").read_bytes(), b"OPENAI_API_KEY=\n")
             self.assertEqual(list((folder / "参考画像").iterdir()), [])
             with zipfile.ZipFile(zipped) as archive:
@@ -89,14 +90,14 @@ class PublicReleaseTests(unittest.TestCase):
             base = Path(directory)
             root, snapshot, models = self.setup_release(base)
             output = base / "public"
-            with patch("tools.export_release.MODELS", models), patch("tools.export_release.DOCUMENTS", ("Readme.txt",)), patch("tools.export_release.verify_executable"):
+            with patch("tools.export_release.MODELS", models), patch("tools.export_release.DOCUMENTS", ("docs/Readme.txt",)), patch("tools.export_release.verify_executable"):
                 (snapshot / "model.safetensors").write_bytes(b"evil! data")
                 with self.assertRaisesRegex(ValueError, "SHA-256"):
                     export_release(root, output)
                 self.assertFalse(output.exists())
                 (snapshot / "model.safetensors").write_bytes(b"model data")
                 secret = "sk-" + "private" * 8
-                (root / "Readme.txt").write_text(secret)
+                (root / "docs/Readme.txt").write_text(secret)
                 with self.assertRaises(ValueError) as caught:
                     export_release(root, output)
                 self.assertNotIn(secret, str(caught.exception))

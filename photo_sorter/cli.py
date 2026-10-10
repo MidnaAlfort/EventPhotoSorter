@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from .log_safety import redact_sensitive_text, safe_exception
+
 import argparse
 import os
 from pathlib import Path
 
 from .app_paths import application_dir, load_app_environment, model_cache_dir
-from .costs import estimate_api_cost, format_cost_estimate
+from .completion import build_completion_report
 from .engine import PhotoSorter
-from .formatting import format_elapsed_time
-from .models import ProgressEvent, SorterConfig
+from .models import DEFAULT_API_MODEL, ProgressEvent, SorterConfig
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -16,9 +17,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--work", type=Path, default=Path("作業フォルダ"))
     parser.add_argument("--references", type=Path, default=Path("参考画像"))
     parser.add_argument("--output", type=Path, default=Path("振り分け後"))
-    parser.add_argument("--mode", choices=("hybrid", "api", "local", "regional"), default="local")
+    parser.add_argument("--mode", choices=("hybrid", "api", "local", "regional", "jev", "decisions"), default="local")
+    for name, default in (("scene-probability", .75), ("confidence", .75), ("probability", .75),
+                          ("margin", .20), ("dominant-probability", .85)):
+        parser.add_argument("--decisions-" + name, type=float, default=default)
     parser.add_argument("--save-records", action="store_true", help="処理記録CSV・集計JSON・再開用履歴を保存（標準OFF）")
-    parser.add_argument("--model", default="gpt-5.6-luna")
+    parser.add_argument("--model", default=DEFAULT_API_MODEL)
+    parser.add_argument("--decisions-gpt-fallback", action=argparse.BooleanOptionalAction, default=True,
+                        help="DecisionAPIで曖昧な写真だけGPTで再判定（標準ON、追加料金あり）")
     parser.add_argument("--top-k", type=int, default=4)
     parser.add_argument("--local-confidence", type=float, default=0.78)
     parser.add_argument("--local-margin", type=float, default=0.06)
@@ -73,6 +79,7 @@ def main() -> int:
         mode=args.mode,
         save_records=args.save_records,
         api_key=os.getenv("OPENAI_API_KEY"),
+        jev_api_key=os.getenv("JEV_API_Key"),
         model=args.model,
         local_top_k=args.top_k,
         local_confidence=args.local_confidence,
@@ -93,36 +100,22 @@ def main() -> int:
         regional_local_first=args.regional_local_first if args.mode == 'regional' else False,
         quality_filter=args.quality_filter if args.mode == 'regional' else False,
         quality_api_review=args.quality_api_review,
+        decisions_gpt_fallback=args.decisions_gpt_fallback,
+        **{"decisions_" + name: getattr(args, "decisions_" + name) for name in (
+            "scene_probability", "confidence", "probability", "margin", "dominant_probability")},
     )
     sorter = PhotoSorter(config, progress=report)
-    records = sorter.run()
-    errors = sum(bool(record.error) for record in records)
-    api_calls = sum(record.api_calls for record in records)
-    screen_calls = sum(record.screen_calls for record in records)
-    input_tokens = sum(record.input_tokens for record in records)
-    cached_tokens = sum(record.cached_input_tokens for record in records)
-    cache_write_tokens = sum(record.cache_write_input_tokens for record in records)
-    output_tokens = sum(record.output_tokens for record in records)
-    cost_text = format_cost_estimate(
-        estimate_api_cost(
-            config.model,
-            input_tokens,
-            cached_tokens,
-            cache_write_tokens,
-            output_tokens,
-        ),
-        config.model,
-    )
-    print(
-        f"完了: {len(records)}件、エラー: {errors}件、API: {api_calls}回 "
-        f"(事前人数: {screen_calls}、人物照合: {api_calls - screen_calls})、"
-        f"参考領域再利用: {sum(r.reference_cache_hits for r in records)}回、"
-        f"連写照合共有: {sum(bool(r.burst_shared_from) for r in records)}枚、"
-        f"品質確認: {sum(r.quality_calls for r in records)}回（事前人数の内数）、再試行: {sum(r.api_retries for r in records)}回、"
-        f"入力: {input_tokens} tokens (キャッシュ: {cached_tokens}, 書込: {cache_write_tokens})、"
-        f"出力: {output_tokens} tokens、{cost_text}、所要時間: {format_elapsed_time(sorter.elapsed_seconds)}"
-    )
-    return 1 if errors else 0
+    try:
+        records = sorter.run()
+    except Exception as exc:
+        print(safe_exception(exc))
+        return 1
+    report = build_completion_report(records, config.model, sorter.elapsed_seconds,
+                                     config.dry_run, config.mode, sorter.cancel_event.is_set())
+    print(report.title)
+    print(report.message)
+    print("\n詳細\n" + report.details)
+    return 1 if any(record.error for record in records) else 0
 
 
 if __name__ == "__main__":

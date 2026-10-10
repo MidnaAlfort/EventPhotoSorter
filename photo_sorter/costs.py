@@ -30,6 +30,8 @@ MODEL_PRICING: dict[str, ModelPricing] = {
     "gpt-5.6-sol": ModelPricing(4.00, 0.40, 20.00),
     "gpt-5.6-terra": ModelPricing(2.00, 0.20, 12.00),
     "gpt-5.6-luna": ModelPricing(0.20, 0.02, 1.20),
+    # GPT 6 Luna Standard short-context pricing verified 2026-10-09.
+    "gpt-6-luna": ModelPricing(0.10, 0.01, 0.50),
 }
 
 

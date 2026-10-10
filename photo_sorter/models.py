@@ -7,8 +7,10 @@ from typing import Literal
 from .app_paths import APP_VERSION
 
 
+DEFAULT_API_MODEL = "gpt-6-luna"
+
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
-SortMode = Literal["hybrid", "api", "local", "regional"]
+SortMode = Literal["hybrid", "api", "local", "regional", "jev", "decisions"]
 
 
 @dataclass(frozen=True)
@@ -33,7 +35,7 @@ class SorterConfig:
     output_dir: Path
     mode: SortMode = "hybrid"
     api_key: str | None = None
-    model: str = "gpt-5.6-luna"
+    model: str = DEFAULT_API_MODEL
     local_model: str = "facebook/dinov2-small"
     local_top_k: int = 4
     local_confidence: float = 0.78
@@ -60,6 +62,19 @@ class SorterConfig:
     quality_filter: bool = False
     quality_api_review: bool = True
     save_records: bool = False
+    jev_api_key: str | None = field(default=None, repr=False)
+    jev_model: str = "jev-1.13.0"
+    jev_feature_confidence: float = 0.95
+    jev_min_features: int = 3
+    jev_confidence: float = 0.95
+    jev_probability: float = 0.95
+    jev_margin: float = 0.90
+    decisions_gpt_fallback: bool = True
+    decisions_scene_probability: float = 0.75
+    decisions_confidence: float = 0.75
+    decisions_probability: float = 0.75
+    decisions_margin: float = 0.20
+    decisions_dominant_probability: float = 0.85
 
     def normalized(self) -> "SorterConfig":
         self.reuse_api_results = False
@@ -70,6 +85,8 @@ class SorterConfig:
             self.cache_dir = self.cache_dir.expanduser().resolve()
         if self.api_key:
             self.api_key = self.api_key.strip()
+        if self.jev_api_key:
+            self.jev_api_key = self.jev_api_key.strip()
         return self
 
 
@@ -154,9 +171,34 @@ class SortRecord:
     reference_setup_calls: int = 0
     reference_cache_hits: int = 0
     burst_shared_from: str = ""
+    feature_calls: int = 0
+    feature_seconds: float = 0.0
+    jev_calls: int = 0
+    jev_seconds: float = 0.0
+    jev_input_tokens: int = 0
+    jev_output_tokens: int = 0
+    jev_confidence: float = 0.0
+    jev_probability: float = 0.0
+    jev_model: str = ""
+    jev_fallback_reason: str = ""
+    decisions_gpt_fallback: bool = False
+    decisions_calls: int = 0
+    decisions_seconds: float = 0.0
+    decisions_input_tokens: int = 0
+    decisions_cached_tokens: int = 0
+    decisions_cache_write_tokens: int = 0
+    decisions_output_tokens: int = 0
+    decisions_scene_probability: float = 0.0
+    decisions_confidence: float = 0.0
+    decisions_probability: float = 0.0
+    decisions_margin: float = 0.0
+    decisions_dominant_probability: float = 0.0
+    decisions_model: str = ""
+    decisions_review_reason: str = ""
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        from .log_safety import redact_structure
+        return redact_structure(asdict(self))
 
 
 @dataclass

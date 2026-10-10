@@ -1,6 +1,8 @@
 """Offline packaged-runtime check; does not call APIs or move user images."""
 from __future__ import annotations
 
+from .log_safety import redact_sensitive_text
+
 import json
 import traceback
 from pathlib import Path
@@ -39,7 +41,7 @@ def write_diagnostics(destination: Path) -> int:
         picture.close()
         result["success"] = result["detector_finite"] and result["identity_finite"]
     except Exception:
-        result["error"] = traceback.format_exc()
+        result["error"] = redact_sensitive_text(traceback.format_exc())
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0 if result["success"] else 1

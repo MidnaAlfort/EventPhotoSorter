@@ -5,11 +5,15 @@
   },
   {
     "path": "README.md",
-    "sha256": "ae3bfde303396357341eb5a74c5c9f81c44053d37ffadda40553c64d7c048bb8"
+    "sha256": "11b648ed4d17855ba74c9fe341ab4c89a4414c9c492dfbc79362a03f3efdcc4a"
   },
   {
     "path": "docs/Readme.txt",
-    "sha256": "ff9a0018627ba7c75906046560d0888c96ee273cd34ce7719b52ef5b495a1d2d"
+    "sha256": "1c94c5b875ba6618000cf102bfb2682bdfbc28226e2da4a0027223e729c53872"
+  },
+  {
+    "path": "docs/使い方.txt",
+    "sha256": "1c94c5b875ba6618000cf102bfb2682bdfbc28226e2da4a0027223e729c53872"
   },
   {
     "path": "LICENSE",
@@ -24,12 +28,16 @@
     "sha256": "88a4952b9a20574029dd9c111bcd63422b9348ebe7872bfd8397cc47a3d27dd1"
   },
   {
+    "path": ".gitattributes",
+    "sha256": "ee3d090c26f853831640a5ccecd1bb1b57574ac484df5854446438b3d02b18f1"
+  },
+  {
     "path": ".gitignore",
     "sha256": "a8b7d797cb1f0728f15912c73e42417e9a705c28888c32553bf89d47ad618de7"
   },
   {
     "path": ".env.example",
-    "sha256": "f7b518e64f703e37750a058bc39bc1531a5e87d87cc8f6c949934718af0e68a1"
+    "sha256": "e24fce160e734ea637e4269a9ba6a8555178a44d14bea87191dfa4f9b1c17411"
   },
   {
     "path": "requirements.txt",
@@ -53,7 +61,7 @@
   },
   {
     "path": "build_exe.ps1",
-    "sha256": "d0b651f11a1184099ccaa481547dd0a0bc58bef9bb6532b5d657d87ab19ba6d0"
+    "sha256": "fd52293f5e83986e4bab57e4dc79eb5b36b574ea567f9136eb4d9d7ffe7160e9"
   },
   {
     "path": "build_gpu_exe.ps1",
@@ -61,7 +69,7 @@
   },
   {
     "path": "MidnaUdon EventPhotoSorter.spec",
-    "sha256": "a476758bc901f0104f1d46e1dd6e4125b7b16015a8ebb83944bb600ab228c53b"
+    "sha256": "0d0a87dcbc6ebafb090b6390800d1fc7b1bbff0e5ab9bad07c7ab0d629c886e6"
   },
   {
     "path": "RUNTIME_TERMS.txt",
@@ -81,19 +89,19 @@
   },
   {
     "path": "photo_sorter/api_verifier.py",
-    "sha256": "c565263510c599d71ec189ce759026fc792e1b259ffc471d0ff47b1c8f1c6bed"
+    "sha256": "a866e391c4af4df4b0b55e11bddc0e2d929656304e81723f4485944496684516"
   },
   {
     "path": "photo_sorter/app_paths.py",
-    "sha256": "6c2f7838cc01aa20a7f708461d3ad6f7fec2cad87474d22229e3f8b0e66e74db"
+    "sha256": "59c92939e97c763d7234ef164e508170096642ef2112e2543df80bb8a36c7f9e"
   },
   {
     "path": "photo_sorter/batch_verifier.py",
-    "sha256": "23501de3db0ee2ac3b6d3d2a6a7bfd1cb6377d705ca53f0fa9499f3a04c74c75"
+    "sha256": "b92fe1a05e2b4b91b657e8a8b3abd64705833b833ff21d055845372af14ec9d1"
   },
   {
     "path": "photo_sorter/benchmark.py",
-    "sha256": "34d3f2cb6b7fa3989d319d2620ae28373263e190dab857856dde9bc5bc9b8f7e"
+    "sha256": "835bdd8c4e4e6c806c4344c3f486f12b39a740a31f24e6e624205ef91cb521d8"
   },
   {
     "path": "photo_sorter/burst.py",
@@ -105,11 +113,19 @@
   },
   {
     "path": "photo_sorter/cli.py",
-    "sha256": "660015a9d456303d02bd589abb649e404006e1fce083888e180924165d3f8bf5"
+    "sha256": "75c77d38042cbb6540d1d2c1f23c567296622993692ad4611ac5228204161d6b"
+  },
+  {
+    "path": "photo_sorter/completion.py",
+    "sha256": "aa6ce1d3d875185c47acc64065fb49d1039e099c470724d9b5958ad2166c4cc0"
   },
   {
     "path": "photo_sorter/costs.py",
-    "sha256": "7a50162f1e3c893e4481ef97bd67a4eb508f2421936bafe3e0ceb60d4b766e2d"
+    "sha256": "102d21ab4cb0a6665c36c2d649dc7b047c360cdd3611473c239adc73e8105db0"
+  },
+  {
+    "path": "photo_sorter/decisions_verifier.py",
+    "sha256": "14536d3e882973115d90082357adc987efd7f861e3b61aef6481e74fb42ddea4"
   },
   {
     "path": "photo_sorter/diagnostics.py",
@@ -121,7 +137,7 @@
   },
   {
     "path": "photo_sorter/engine.py",
-    "sha256": "f3fea7e3f95dcb191a837457401b85a378da11979dbef76371f075d261f992a5"
+    "sha256": "ea4250c20a27300b0f67be2a0ca98001171860614456f9e839e7c3fa1908ba5b"
   },
   {
     "path": "photo_sorter/formatting.py",
@@ -129,23 +145,31 @@
   },
   {
     "path": "photo_sorter/gpu_diagnostics.py",
-    "sha256": "f89b3e3029de9ccf2bbf0f6722dc77021ffcbbdced9abc54633e11a6aaaa5a9c"
+    "sha256": "81f8b2ebadd3c2a4de42c281204dfe18617792fa26b3acab11d0b48feb2e247b"
   },
   {
     "path": "photo_sorter/gui.py",
-    "sha256": "24beb1397374bd312e486b924a72453fe4be6d2ba06409b7bc9f1fa5e61e8d6c"
+    "sha256": "d174ec60f4d1120329d5a7616f0f65d2b6e9c1f7823193533f9cc08c5fe846ee"
   },
   {
     "path": "photo_sorter/image_utils.py",
     "sha256": "ff9f5accb78418ce5a8225d4a6c475a1db89edb79365173e7a98ca4fe184c2b1"
   },
   {
+    "path": "photo_sorter/jev_verifier.py",
+    "sha256": "0aff9c9cfc963d85a59157358ca6287bdbb205ef97456f274bfa7674287e0ea2"
+  },
+  {
     "path": "photo_sorter/local_matcher.py",
     "sha256": "4133e7b65fd9e509c7853a8e00187e48c0391e1ed9837a2774e6d605c103437b"
   },
   {
+    "path": "photo_sorter/log_safety.py",
+    "sha256": "a2e1d9ea7321a1b44162895e46d831067e1829d8f6efbb68f76493f846609d75"
+  },
+  {
     "path": "photo_sorter/models.py",
-    "sha256": "646cedd535878daed86f73ea568e96953be05481224f1f35bebadc8bc0d6a8bb"
+    "sha256": "73b653aa0c7796c48e2f2d520297ad1b4ba09e23c2c4c10d279d3f97a6b89408"
   },
   {
     "path": "photo_sorter/package_models.py",
@@ -185,7 +209,7 @@
   },
   {
     "path": "photo_sorter/runtime_diagnostics.py",
-    "sha256": "753f1af1aeab362695e8b6529873612aede33d8bb97aae8692c7c887ecb3f310"
+    "sha256": "8d628a67a0192c2b28108ccc2f93dbb79ab80cf384b575756b322c4d4390bbad"
   },
   {
     "path": "photo_sorter/runtime_terms.py",
@@ -200,8 +224,16 @@
     "sha256": "624d8c86912365d3e9af28ec23abc117755568becae758fb58951ca39f35be58"
   },
   {
+    "path": "tests/test_completion.py",
+    "sha256": "acb34b6eefff1b54016780b56fe1a556805427c8523be738218422ecefb821ee"
+  },
+  {
+    "path": "tests/test_decisions.py",
+    "sha256": "f6d228771add9246c5607c5e3cdf7754ddcdebd9501ea18a8b21a657bd8ae398"
+  },
+  {
     "path": "tests/test_eventphotosorter.py",
-    "sha256": "c127d17865d2730b2bc4bcc4c4594639218d54309c0de81ca3a96ea185cee8cb"
+    "sha256": "2cc6d7ea020fca3d090c280d1da44b3e78d1a0e7acf34e0261cbe25657a5bec8"
   },
   {
     "path": "tests/test_gpu.py",
@@ -212,8 +244,16 @@
     "sha256": "e848acd0c7461facbfdb22eba620a50911df016a2383a73e9a88c313cde3d53d"
   },
   {
+    "path": "tests/test_jev.py",
+    "sha256": "dc89623c8dad0360f0679de29cad20956944208491018a02db9d33b67cffd3b5"
+  },
+  {
+    "path": "tests/test_log_safety.py",
+    "sha256": "8fc4a0c7267ba44401f85cab307b1587667b988c1df33d1de264fd7c6033747b"
+  },
+  {
     "path": "tests/test_release_security.py",
-    "sha256": "63aecdd90390a79ccd6a122da1e61c4da2573e2a0e729d8a79999f1be572a65a"
+    "sha256": "b5845b56b457fa4211b91dcace1046c87866b27cc31e21890e0209c4b9f42c07"
   },
   {
     "path": "tests/test_sorter.py",
@@ -221,7 +261,7 @@
   },
   {
     "path": "tests/test_source_export.py",
-    "sha256": "b221613928c5040bd8875a3fe68d1e71011d77447696d0e80233c1d45dd1b7a3"
+    "sha256": "fa88fa911125f797ec12690e180dd60adb33bc1e82b1e29f6bbfbea39fca4897"
   },
   {
     "path": "tests/test_v114.py",
@@ -249,11 +289,11 @@
   },
   {
     "path": "tools/export_release.py",
-    "sha256": "7a530a0934f64c183bd289612b65beb0416022e80a65ffd9b0fc96c2c7456dbc"
+    "sha256": "df6162a509058c3fa766d3b4bc7d52e9b2c06306d31f58f55245fedeabd806fe"
   },
   {
     "path": "tools/export_source.py",
-    "sha256": "7ffdacd0ce1cf147be593dcafae1140b268f2410c26e3af0964191de5891de1c"
+    "sha256": "56074521c8e42e69f97bd0d8450db40274422c7ef3cd248c1adbe8f233d478cb"
   },
   {
     "path": "tools/fetch_upstream_licenses.py",
@@ -262,6 +302,10 @@
   {
     "path": "tools/release_policy.py",
     "sha256": "ceeee565252be46ecd1a54f5adcc1b02cdefb45952c3dc7a500ce72985c989ce"
+  },
+  {
+    "path": "tools/source_security.py",
+    "sha256": "982580d689eb51cf6371aa8da3e96f1020af63a4f658f6a27bf27d20440b682a"
   },
   {
     "path": "licenses/INDEX.md",
@@ -273,7 +317,7 @@
   },
   {
     "path": "licenses/native_dependencies.json",
-    "sha256": "df90492c15cce2db2528c3e56061e0118f16e27bda0cc2ea09454b23b8a8ede2"
+    "sha256": "37c7ddb424c3cf6cf9617003cf589fa2ff42df8c5cf21cd20f8efdc56c602730"
   },
   {
     "path": "licenses/python/altgraph/fb197afb75-LICENSE",
@@ -1442,9 +1486,5 @@
   {
     "path": "licenses/upstream/zlib/LICENSE",
     "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
-  },
-  {
-    "path": ".gitattributes",
-    "sha256": "d8fb0de4792538f93822b2c0d235604921299d5e54a3d6ec7a6cb34536e8bf1e"
   }
 ]

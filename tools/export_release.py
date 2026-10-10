@@ -32,6 +32,7 @@ def checked_text(source):
 def release_plan(root, exe):
     plan = [(exe, Path(exe.name))]
     plan += [(root / name, Path(name).name) for name in DOCUMENTS]
+    plan.append((root / "docs/使い方.txt", Path("使い方.txt")))
     plan += [(p, p.relative_to(root)) for p in sorted((root / "licenses").rglob("*")) if p.is_file()]
     generated = {Path(".env"): b"OPENAI_API_KEY=\n"}
     hubs = [root / ".model_cache/hub", root / "アプリデータ/model_cache/hub", root / "配布用/MidnaUdon EventPhotoSorter/アプリデータ/model_cache/hub"]
@@ -118,7 +119,7 @@ def export_release(root, output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "公開用" / ("EventPhotoSorter-v1_00-Windows-" + datetime.now().strftime("%Y%m%d-%H%M%S")))
+    parser.add_argument("--output", type=Path, default=ROOT / "公開用" / ("EventPhotoSorter-v1_10-Windows-" + datetime.now().strftime("%Y%m%d-%H%M%S")))
     folder, archive = export_release(ROOT, parser.parse_args().output)
     print(folder)
     print(archive)

@@ -1,6 +1,8 @@
 """Synchronous multi-target requests, strict ID validation and isolated fallbacks."""
 from __future__ import annotations
 
+from .log_safety import safe_exception
+
 import hashlib
 import json
 from contextlib import ExitStack
@@ -113,7 +115,7 @@ def verify_many(verifier, targets: list[Path], references: list[ReferenceIdentit
             try:
                 url = image_to_data_url(path, verifier.max_side)
             except (OSError, ValueError) as exc:
-                result.errors[path] = f"画像読込エラー: {exc}"
+                result.errors[path] = "画像読込エラー: " + safe_exception(exc)
                 continue
             content.extend([{"type": "input_text", "text": f"TARGET_ID: {target_id}"},
                             {"type": "input_image", "image_url": url, "detail": "high"}])
@@ -167,7 +169,7 @@ def verify_many(verifier, targets: list[Path], references: list[ReferenceIdentit
                 result.decisions[path] = decision
             except Exception as exc:
                 result.usage_incomplete = True
-                result.errors[path] = f"{type(exc).__name__}: {exc}"
+                result.errors[path] = safe_exception(exc)
         if cache:
             for path, decision in result.decisions.items():
                 if not decision.uncertain and not decision.api_cache_hit:

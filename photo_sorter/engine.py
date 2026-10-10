@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .log_safety import redact_sensitive_text, redact_structure, register_secrets, safe_exception
+
 import csv
 import json
 import os
@@ -7,7 +9,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -39,7 +41,7 @@ ProgressCallback = Callable[[ProgressEvent], None]
 
 def validate_config(config: SorterConfig) -> None:
     config.normalized()
-    if config.mode not in {"hybrid", "api", "local", "regional"}:
+    if config.mode not in {"hybrid", "api", "local", "regional", "jev", "decisions"}:
         raise ValueError("判定モードが不正です。")
     if not config.work_dir.is_dir():
         raise ValueError(f"作業フォルダが見つかりません: {config.work_dir}")
@@ -53,10 +55,37 @@ def validate_config(config: SorterConfig) -> None:
         pass
     else:
         raise ValueError("出力フォルダを作業フォルダの内側には置けません。")
-    if config.mode in {"hybrid", "api", "regional"} and not config.api_key:
+    if config.mode in {"hybrid", "api", "regional", "jev", "decisions"} and not config.api_key:
         raise ValueError("APIを使うモードではOPENAI_API_KEYが必要です。")
+    if config.mode == "jev" and not config.jev_api_key:
+        raise ValueError("Jev実験モードには.envのJEV_API_Keyが必要です（OpenAIキーも必要）。")
+    if config.mode == "jev":
+        for name, label in (("jev_feature_confidence", "特徴抽出の最低確信度"),
+                            ("jev_confidence", "Jevの最低確信度"),
+                            ("jev_probability", "Jevの最低選択確率"),
+                            ("jev_margin", "Jevの1位と2位の最低差")):
+            value = getattr(config, name)
+            if type(value) not in (float, int) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"{label}は0～1で指定してください。")
+        if type(config.jev_min_features) is not int or not 1 <= config.jev_min_features <= 5:
+            raise ValueError("Jevの最低特徴項目数は1～5の整数で指定してください。")
     if config.crowd_threshold < 3:
         raise ValueError("大勢判定の人数は3以上にしてください。")
+    if config.mode == "decisions":
+        if type(config.crowd_threshold) is not int or config.crowd_threshold > 254:
+            raise ValueError("Decisionsの大勢判定の人数は3～254の整数で指定してください。")
+        if type(config.decisions_gpt_fallback) is not bool:
+            raise ValueError("GPT再判定の設定はON/OFFで指定してください。")
+        for name, label in (("decisions_scene_probability", "Decisionsの人数の最低選択確率"),
+                            ("decisions_confidence", "Decisionsの人物の最低確信度"),
+                            ("decisions_probability", "Decisionsの人物の最低選択確率"),
+                            ("decisions_margin", "Decisionsの人物候補の最低差"),
+                            ("decisions_dominant_probability", "Decisionsの主役判定の最低確率")):
+            value = getattr(config, name)
+            if type(value) not in (float, int) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"{label}は0～1で指定してください。")
+        if config.decisions_dominant_probability <= 0.5:
+            raise ValueError("Decisionsの主役判定の最低確率は0.5より大きくしてください。")
     if config.local_top_k < 1:
         raise ValueError("ローカル候補数は1以上にしてください。")
     if config.api_concurrency < 1:
@@ -119,6 +148,7 @@ class PhotoSorter:
         cancel_event: threading.Event | None = None,
     ) -> None:
         self.config = config
+        register_secrets(config.api_key, config.jev_api_key)
         self.progress = progress or (lambda event: None)
         self.cancel_event = cancel_event or threading.Event()
         self.api_calls = 0
@@ -139,6 +169,9 @@ class PhotoSorter:
         self._regional_gpu_lock = threading.Lock()
         self._reference_setup = {'calls': 0, 'cache_hits': 0, 'retries': 0, 'seconds': 0., 'failures': 0,
                                  'usage': VisionDecision(0, [], 0, True, '')}
+        self._jev_experiment = None
+        self._jev_setup = None
+        self._decisions_verifier = None
 
     def run(self) -> list[SortRecord]:
         self._burst_anchors = []
@@ -195,6 +228,25 @@ class PhotoSorter:
                 continue
             pending.append((source, stat))
 
+        if config.mode == "jev" and pending and not self.cancel_event.is_set():
+            from .jev_verifier import JevExperiment, ExperimentStats
+            self._jev_setup = ExperimentStats()
+            self._jev_experiment = JevExperiment(self._api(), config, self._increment_api_calls)
+            self._jev_experiment.prepare(identities, self._jev_setup, self.cancel_event.is_set,
+                lambda message: self._emit(completed, len(work_images), "", message))
+            setup = self._jev_setup
+            self._reference_setup.update(calls=setup.feature_calls, cache_hits=setup.cache_hits,
+                failures=setup.failures, seconds=setup.feature_seconds, usage=setup.usage,
+                retries=self.api_verifier.retry_count() if isinstance(self.api_verifier, ApiVerifier) else 0)
+            if not self._jev_experiment.ready:
+                self._emit(completed, len(work_images), "", "参考特徴が揃わないため、曖昧な写真はGPTで画像判定します。")
+
+        if config.mode == "decisions" and pending and not self.cancel_event.is_set():
+            from .decisions_verifier import DecisionsVerifier
+            self._emit(completed, len(work_images), "", "Decisions用の参考画像を準備しています（API呼出なし）")
+            self._decisions_verifier = DecisionsVerifier(self._api(), config, identities, self._increment_api_calls,
+                                                       cancel_event=self.cancel_event)
+
         with ThreadPoolExecutor(
             max_workers=config.api_concurrency,
             thread_name_prefix="photo-sorter",
@@ -208,11 +260,16 @@ class PhotoSorter:
                     setup = self._reference_setup
                     record.reference_setup_calls = setup['calls']
                     record.api_calls += setup['calls']
-                    record.screen_calls += setup['calls']
+                    if config.mode != "jev":
+                        record.screen_calls += setup['calls']
                     record.reference_cache_hits = setup['cache_hits']
                     record.api_retries += setup['retries']
                     record.usage_incomplete = record.usage_incomplete or bool(setup['failures'])
                     self._add_usage(record, setup['usage'])
+                    if self._jev_setup is not None:
+                        record.feature_calls += self._jev_setup.feature_calls
+                        record.feature_seconds += self._jev_setup.feature_seconds
+                        record.usage_incomplete |= self._jev_setup.usage_incomplete
                 source = Path(record.source)
                 record.model = config.model
                 record.mode = config.mode
@@ -242,7 +299,7 @@ class PhotoSorter:
             # DINOv2 stays on the producer thread. Network workers can already verify
             # the preceding batch while this one is embedding; queue size is bounded.
             for start in range(0, len(pending), 4):
-                if self.cancel_event.is_set():
+                if self.cancel_event.is_set() or self._decisions_unavailable():
                     break
                 batch = pending[start:start + 4]
                 self._emit(completed, len(work_images), "", f"判定準備 {start + 1}～{start + len(batch)} / {len(pending)}")
@@ -256,6 +313,8 @@ class PhotoSorter:
                         futures[future] = group[0]
                 else:
                     for source, stat in batch:
+                        if self._decisions_unavailable():
+                            break
                         burst = None
                         descriptor = None
                         if config.mode == 'regional' and config.share_burst_identity and config.quality_filter:
@@ -286,10 +345,20 @@ class PhotoSorter:
                 for future in done:
                     collect(future)
 
+        if self._decisions_unavailable():
+            from .decisions_verifier import REVIEW_LABELS
+            reason = REVIEW_LABELS.get(self._decisions_verifier.disabled_reason, "利用できません")
+            self._emit(completed, len(work_images), "",
+                       f"DecisionAPIを停止（{reason}）。未処理・エラーの写真は作業フォルダに残しています。"
+                       "APIキー・利用権限を確認するか「人物領域ハイブリッド」へ切り替えてください。")
         if self.cancel_event.is_set() and completed < len(work_images):
             self._emit(completed, len(work_images), "", "キャンセルしました")
 
         return records
+
+    def _decisions_unavailable(self):
+        return (self.config.mode == "decisions" and self._decisions_verifier is not None
+                and bool(self._decisions_verifier.disabled_reason))
 
     def _process_safely(
         self,
@@ -301,7 +370,7 @@ class PhotoSorter:
         signature: str,
         local_candidates: list[LocalCandidate] | None,
     ) -> SortRecord | None:
-        if self.cancel_event.is_set():
+        if self.cancel_event.is_set() or self._decisions_unavailable():
             return None
         self._api_call_context.attempts = 0
         self._api_call_context.seconds = 0.0
@@ -309,6 +378,9 @@ class PhotoSorter:
         self._api_call_context.screen_calls = 0
         self._api_call_context.usage = VisionDecision(0, [], 0, True, "")
         self._api_call_context.quality_calls = 0
+        self._api_call_context.jev_stats = None
+        self._api_call_context.decisions_stats = None
+        self._api_call_context.decisions_fallback = False
         if isinstance(self.api_verifier, ApiVerifier):
             self.api_verifier.reset_retry_count()
         started = time.perf_counter()
@@ -327,11 +399,16 @@ class PhotoSorter:
             record.api_seconds = round(self._api_call_context.seconds, 3)
             record.api_cache_hits = self._api_call_context.cache_hits
             record.api_retries = self.api_verifier.retry_count() if isinstance(self.api_verifier, ApiVerifier) else 0
+            self._attach_jev_stats(record)
+            self._attach_decisions_stats(record)
             return record
         except Exception as exc:  # Continue so one broken image does not lose the batch.
+            stats = getattr(self._api_call_context, "decisions_stats", None)
+            if self._decisions_unavailable() and stats is not None and not stats.decisions_calls:
+                return None  # A queued worker never submitted this photo.
             error_dir = self.config.output_dir / "複数人or未分類" / "エラー"
             destination = error_dir / source.name if self.config.dry_run else copy_without_overwrite(source, error_dir)
-            return SortRecord(
+            record = SortRecord(
                 source=str(source),
                 source_size=stat.st_size,
                 source_mtime_ns=stat.st_mtime_ns,
@@ -350,8 +427,35 @@ class PhotoSorter:
                 quality_calls=getattr(self._api_call_context, 'quality_calls', 0),
                 api_retries=self.api_verifier.retry_count() if isinstance(self.api_verifier, ApiVerifier) else 0,
                 usage_incomplete=bool(getattr(self._api_call_context, 'attempts', 0)),
-                error=f"{type(exc).__name__}: {exc}",
+                error=safe_exception(exc),
             )
+            self._attach_jev_stats(record)
+            self._attach_decisions_stats(record)
+            return record
+
+    def _attach_jev_stats(self, record):
+        stats = getattr(self._api_call_context, "jev_stats", None)
+        if stats is not None:
+            for key, value in stats.record_fields().items():
+                setattr(record, key, value)
+            record.usage_incomplete |= stats.usage_incomplete
+            if not record.error:
+                record.decision_source = "jev_fallback" if stats.jev_fallback_reason else "jev"
+
+    def _attach_decisions_stats(self, record):
+        stats = getattr(self._api_call_context, "decisions_stats", None)
+        if stats is not None:
+            for key, value in stats.record_fields().items():
+                setattr(record, key, value)
+            record.decisions_gpt_fallback = self._api_call_context.decisions_fallback
+            record.usage_incomplete = stats.usage_incomplete or (record.decisions_gpt_fallback and (record.usage_incomplete or record.api_retries > 0))
+            record.api_retries += stats.decisions_retries
+            if record.decisions_gpt_fallback:
+                record.decision_source = "decisions_gpt_error" if record.error else "decisions_gpt"
+            elif not record.error:
+                record.decision_source = "decisions_review" if stats.decisions_review_reason else "decisions"
+                if record.decision_source == "decisions_review":
+                    record.visible_avatar_count = None
 
     def _process_one(
         self,
@@ -387,6 +491,38 @@ class PhotoSorter:
         elif config.mode == "api":
             decision = self._verify(source, identities, signature)
             api_calls += int(not decision.api_cache_hit)
+        elif config.mode == "decisions":
+            from .decisions_verifier import DecisionsStats
+            stats = DecisionsStats()
+            self._api_call_context.decisions_stats = stats
+            decision = self._decisions_verifier.decide(source, stats)
+            self._api_call_context.seconds += stats.decisions_seconds
+            if decision is None:
+                from .decisions_verifier import REVIEW_LABELS
+                reasons = "、".join(REVIEW_LABELS.get(reason, reason)
+                                   for reason in stats.decisions_review_reason.split("|"))
+                if self._decisions_unavailable():
+                    raise RuntimeError(f"DecisionAPIを停止（{reasons}）。"
+                                       "APIキー・利用権限を確認するか「人物領域ハイブリッド」へ切り替えてください。")
+                if (stats.decisions_review_reason.startswith("http_")
+                        or stats.decisions_review_reason in {
+                            "request_failed", "request_timeout", "rate_limited",
+                            "request_cancelled", "invalid_response",
+                        }):
+                    raise RuntimeError(f"DecisionAPIの判定に失敗（{reasons}）。写真は作業フォルダに残します。")
+                if self.cancel_event.is_set():
+                    raise RuntimeError("GPT再判定の前に停止しました。写真は作業フォルダに残します。")
+                if config.decisions_gpt_fallback:
+                    self._api_call_context.decisions_fallback = True
+                    try:
+                        decision = self._verify(source, identities, signature)
+                    except Exception:
+                        # A provider error can contain uploaded data or credentials.
+                        raise RuntimeError("GPTの再判定に失敗しました。写真は作業フォルダに残します。") from None
+                    decision.reason_short = f"DecisionAPI→GPT ({reasons}): {decision.reason_short}"
+                else:
+                    decision = VisionDecision(1, [], 0., True, f"DecisionAPI要確認: {reasons}")
+            api_calls = self._api_call_context.attempts
         else:
             local_candidates = (
                 precomputed_local_candidates
@@ -400,6 +536,19 @@ class PhotoSorter:
                     local_candidates,
                     reason="節約ハイブリッド: ローカル高確信のためAPI省略（人数判定なし）",
                 )
+            elif config.mode == "jev":
+                from .jev_verifier import ExperimentStats
+                stats = ExperimentStats()
+                self._api_call_context.jev_stats = stats
+                decision = self._jev_experiment.decide(source, local_candidates, stats)
+                self._add_usage(self._api_call_context.usage, stats.usage)
+                self._api_call_context.seconds += stats.feature_seconds + stats.jev_seconds
+                if decision is None:
+                    decision = self._verify(source, identities, signature)
+                    decision.reason_short = f"Jev実験→GPT ({stats.jev_fallback_reason}): {decision.reason_short}"
+                # Includes extraction + Jev + fallback; OpenAI token usage excludes Jev.
+                self._add_usage(decision, stats.usage)
+                api_calls = self._api_call_context.attempts
             else:
                 shortlist = sorted(
                     [
@@ -463,7 +612,26 @@ class PhotoSorter:
                 if screening is not None:
                     self._add_usage(decision, screening)
 
-        route, relative_dir = choose_route(decision, identities_by_id, config)
+        # A successful Jev decision has already passed its explicit configurable
+        # gates. Do not silently apply the unrelated GPT confidence floor again.
+        jev_stats = getattr(self._api_call_context, "jev_stats", None)
+        route_config = (replace(config, api_confidence=0.0)
+                        if config.mode == "jev" and jev_stats is not None
+                        and not jev_stats.jev_fallback_reason else config)
+        decisions_stats = getattr(self._api_call_context, "decisions_stats", None)
+        if (decisions_stats is not None and decisions_stats.decisions_review_reason
+                and not self._api_call_context.decisions_fallback):
+            route, relative_dir = "要確認", Path("複数人or未分類") / "要確認"
+        elif decisions_stats is not None and not decisions_stats.decisions_review_reason:
+            # Decisions has its own gates. A clear foreground subject can be a
+            # portrait even with crowd-threshold many incidental avatars.
+            primary = identities_by_id.get(decision.primary_reference_id)
+            if decision.primary_subject_dominant and primary is not None:
+                route, relative_dir = primary.identity_id, Path(primary.category) / primary.name
+            else:
+                route, relative_dir = choose_route(decision, identities_by_id, replace(config, api_confidence=0.))
+        else:
+            route, relative_dir = choose_route(decision, identities_by_id, route_config)
         destination = (config.output_dir / relative_dir / source.name if config.dry_run
                        else move_without_overwrite(source, config.output_dir / relative_dir))
         return SortRecord(
@@ -515,7 +683,7 @@ class PhotoSorter:
         except Exception as exc:
             # A local preparation failure must never move the original photographs.
             from .batch_verifier import BatchResult
-            outcome = BatchResult(errors={p: f"{type(exc).__name__}: {exc}" for p, _ in pending})
+            outcome = BatchResult(errors={p: safe_exception(exc) for p, _ in pending})
         elapsed = time.perf_counter() - started
         with self._api_calls_lock:
             self.api_calls += outcome.calls
@@ -556,7 +724,7 @@ class PhotoSorter:
                            else move_without_overwrite(source, self.config.output_dir / relative))
         except Exception as exc:
             return SortRecord(str(source), size, mtime, "", "エラー", None,
-                              error=f"保存エラー: {type(exc).__name__}: {exc}")
+                              error="保存エラー: " + safe_exception(exc))
         return SortRecord(str(source), size, mtime, str(destination), route, decision.visible_avatar_count,
             matched_reference_ids=decision.matched_reference_ids, confidence=decision.match_confidence,
             primary_reference_id=decision.primary_reference_id,
@@ -628,13 +796,14 @@ class PhotoSorter:
         from .costs import estimate_api_cost
         records = getattr(self, "_run_records", [])
         config = {key: str(value) if isinstance(value, Path) else value
-                  for key, value in vars(self.config).items() if key != "api_key"}
+                  for key, value in vars(self.config).items() if key not in {"api_key", "jev_api_key"}}
         usage = {key: sum(getattr(r, key) for r in records) for key in (
             "api_calls", "screen_calls", "api_cache_hits", "input_tokens", "cached_input_tokens",
             "cache_write_input_tokens", "output_tokens")}
         if not records:
             usage['api_calls'] += self._reference_setup['calls']
-            usage['screen_calls'] += self._reference_setup['calls']
+            if self.config.mode != "jev":
+                usage['screen_calls'] += self._reference_setup['calls']
             for key in ('input_tokens', 'cached_input_tokens', 'cache_write_input_tokens', 'output_tokens'):
                 usage[key] += getattr(self._reference_setup['usage'], key)
         cost = estimate_api_cost(self.config.model, *[usage[key] for key in (
@@ -666,8 +835,28 @@ class PhotoSorter:
             "usage_incomplete": any(r.usage_incomplete for r in records) or bool(self._reference_setup['failures']),
             "reference_setup_failures": self._reference_setup['failures'],
             "usage": usage, "estimated_cost": asdict(cost) if cost else None}
+        if self.config.mode == "jev":
+            from .jev_verifier import experiment_summary
+            summary["jev_experiment"] = experiment_summary(records)
+            if not records and self._jev_setup is not None:
+                summary["jev_experiment"]["feature_calls"] = self._jev_setup.feature_calls
+                summary["jev_experiment"]["feature_seconds"] = self._jev_setup.feature_seconds
+            summary["estimated_cost_scope"] = "openai_only_excludes_jev"
+            summary["estimated_20000_images_jpy"] = None
+            summary["projection_note"] = "実験中のため2万枚換算なし。特徴抽出とJevの実測を比較してください。"
+        if self.config.mode == "decisions":
+            from .decisions_verifier import experiment_summary, combined_cost
+            # Keep the existing summary key so older comparison readers still work.
+            summary["decisions_experiment"] = experiment_summary(records)
+            total_cost = combined_cost(records, self.config.model)
+            summary["estimated_cost"] = asdict(total_cost) if total_cost else None
+            summary["estimated_cost_scope"] = ("openai_decisions_and_responses"
+                if any(r.decisions_gpt_fallback for r in records) else "openai_decisions")
+            summary["stopped_reason"] = self._decisions_verifier.disabled_reason if self._decisions_verifier else ""
+            summary["estimated_20000_images_jpy"] = None
+            summary["projection_note"] = "参考画像数・キャッシュ利用量によって料金が変わるため2万枚換算なし。"
         self.manifest_path.with_suffix(".summary.json").write_text(
-            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+            json.dumps(redact_structure(summary), ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _local_devices(self):
         devices = {}
@@ -743,7 +932,7 @@ class PhotoSorter:
         exact_index: dict[tuple[str, int], dict[str, list[str]]],
     ) -> dict[Path, list[LocalCandidate]]:
         """Run DINOv2 in bounded batches before parallel network verification."""
-        if self.config.mode == "api" or not pending:
+        if self.config.mode in {"api", "decisions"} or not pending:
             return {}
         if self.config.mode == "regional":
             from .regional import RegionalMatcher
@@ -992,12 +1181,18 @@ class PhotoSorter:
             "app_version", "model", "mode", "dry_run", "scene_source", "region_count",
             "local_scene_gate", "quality_status", "quality_reason", "quality_metrics", "quality_calls", "api_retries", "identity_route",
             "reference_setup_calls", "reference_cache_hits", "burst_shared_from",
+            "feature_calls", "feature_seconds", "jev_calls", "jev_seconds", "jev_input_tokens",
+            "jev_output_tokens", "jev_confidence", "jev_probability", "jev_model", "jev_fallback_reason",
+            "decisions_gpt_fallback", "decisions_calls", "decisions_seconds", "decisions_input_tokens", "decisions_cached_tokens",
+            "decisions_cache_write_tokens", "decisions_output_tokens", "decisions_scene_probability",
+            "decisions_confidence", "decisions_probability", "decisions_margin", "decisions_dominant_probability",
+            "decisions_model", "decisions_review_reason",
         ]
         new_file = not path.exists()
         row = record.to_dict()
-        row["matched_reference_ids"] = " | ".join(record.matched_reference_ids)
-        row["local_candidates"] = json.dumps(record.local_candidates, ensure_ascii=False)
-        row["quality_metrics"] = json.dumps(record.quality_metrics, ensure_ascii=False)
+        row["matched_reference_ids"] = " | ".join(row["matched_reference_ids"])
+        row["local_candidates"] = json.dumps(row["local_candidates"], ensure_ascii=False)
+        row["quality_metrics"] = json.dumps(row["quality_metrics"], ensure_ascii=False)
         with path.open("a", encoding="utf-8-sig", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
             if new_file:
@@ -1009,8 +1204,8 @@ class PhotoSorter:
             ProgressEvent(
                 current=current,
                 total=total,
-                filename=filename,
-                message=message,
+                filename=redact_sensitive_text(filename),
+                message=redact_sensitive_text(message),
                 api_calls=self.api_calls,
             )
         )

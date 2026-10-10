@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .log_safety import redact_sensitive_text, register_secrets, safe_exception
+
 import os
 import json
 import sys
@@ -9,28 +11,39 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from .app_paths import APP_NAME, APP_VERSION, application_dir, bundled_resource, load_app_environment, model_cache_dir, save_api_key
+from .app_paths import APP_NAME, APP_VERSION, application_dir, bundled_resource, load_app_environment, model_cache_dir, save_api_key, save_jev_api_key
 from .catalog import discover_reference_catalog, discover_reference_classes
 from .image_utils import open_rgb, resized_for_model
 from .reference_learning import add_confirmed_reference
-from .costs import estimate_api_cost, format_cost_estimate
+from .completion import CompletionReport, build_completion_report
 from .engine import PhotoSorter, validate_config
 from .formatting import format_elapsed_time
-from .models import ProgressEvent, SorterConfig
+from .models import DEFAULT_API_MODEL, ProgressEvent, SorterConfig
 
 
 MODE_LABELS = {
     "ハイブリッド": "hybrid",
     "固定参考API": "api",
+    "Jev特徴ハイブリッド（実験）": "jev",
+    "DecisionAPI画像判定（おすすめ）": "decisions",
     "人物領域ハイブリッド": "regional",
     "ローカルのみ（人数判定なし）": "local",
 }
 
+DEFAULT_MODE_LABEL = "DecisionAPI画像判定（おすすめ）"
+
 SIMPLE_MODE_LABELS = {
+    "DecisionAPI画像判定（おすすめ）": "decisions",
     "ローカルのみ（人数判定なし）": "local",
     "人物領域ハイブリッド": "regional",
 }
 MODE_DESCRIPTIONS = {
+    "decisions": "おすすめ：高速・低コストのDecisionAPIで、人数・中央の主役・人物照合を1回で判定します。"
+                 "OpenAI APIキーが必要です。曖昧な写真だけGPT 6 Lunaで再判定（追加料金）。それでも確定できない写真は「要確認」へ。ピンぼけ分類はありません。"
+                 "アカウントによって利用できない場合は「人物領域ハイブリッド」を選んでください。",
+    "jev": "実験用。OpenAIキーとJEV_API_Keyが必要です。「Jev実験設定」でキーと採用基準を設定できます。参考特徴をGPTで作成・保存し、曖昧な写真はGPTで特徴抽出→Jev照合、"
+           "不確実・不一致・通信失敗時はGPT画像判定へ戻します。ローカル確定では人数確認なし。ピンぼけ分類なし。"
+           "特徴テキストをTypeSafeへ送信します。速くなる保証はありません。まず「判定だけ試す」か方式比較をご利用ください。",
     "local": "APIキー不要・API料金なし。参考画像と見比べて人物別に振り分けます。複数人数には対応しません。"
              "人数を判定しないため、複数人の写真が個人フォルダに入る場合があります。単独写真向けです。",
     "regional": "ChatGPTのAPIキーが必要です(各自でトークンを発行して使用してください)。人物領域を照合し、複数人／大勢・ピンぼけ・"
@@ -39,8 +52,24 @@ MODE_DESCRIPTIONS = {
                 "自動判定のため、結果をご確認ください。",
     "hybrid": "ローカルで候補を絞り、曖昧な画像をAPIで確認します。APIキーが必要です。"
               "ローカルで確定した画像は人数を確認しません。",
-    "api": "全員の参考画像をAPIへ渡して人物と人数を判定します。APIキーが必要です。"
+    "api": "従来のGPTで全員の参考画像から人物と人数を判定します。OpenAI APIキーが必要です。"
            "一括判定の枚数は「一括判定・人物領域・比較」で変更できます。",
+}
+
+JEV_SETTINGS = {
+    "jev_feature_confidence": ("特徴抽出の最低確信度", "0.95"),
+    "jev_min_features": ("最低特徴項目数（5項目中）", "3"),
+    "jev_confidence": ("Jevの最低確信度", "0.95"),
+    "jev_probability": ("Jevの最低選択確率", "0.95"),
+    "jev_margin": ("Jevの1位と2位の最低差", "0.90"),
+}
+
+DECISIONS_SETTINGS = {
+    "decisions_scene_probability": ("人数の最低選択確率", "0.75"),
+    "decisions_confidence": ("人物の最低確信度", "0.75"),
+    "decisions_probability": ("人物の最低選択確率", "0.75"),
+    "decisions_margin": ("人物の1位と2位の最低差", "0.20"),
+    "decisions_dominant_probability": ("中央の主役の最低確率", "0.85"),
 }
 
 
@@ -61,10 +90,16 @@ class SorterApp(tk.Tk):
         self.output_var = tk.StringVar(value=str(self.project_dir / "振り分け後"))
         self.class_var = tk.StringVar()
         self.class_names: list[str] = []
-        self.mode_var = tk.StringVar(value="ローカルのみ（人数判定なし）")
-        self.simple_mode_var = tk.StringVar(value="ローカルのみ（人数判定なし）")
+        self.mode_var = tk.StringVar(value=DEFAULT_MODE_LABEL)
+        self.simple_mode_var = tk.StringVar(value=DEFAULT_MODE_LABEL)
         self.key_var = tk.StringVar(value=os.getenv("OPENAI_API_KEY", ""))
-        self.model_var = tk.StringVar(value="gpt-5.6-luna")
+        self.jev_key_var = tk.StringVar(value=os.getenv("JEV_API_Key", ""))
+        self.jev_settings_vars = {key: tk.StringVar(value=default)
+                                  for key, (_, default) in JEV_SETTINGS.items()}
+        self.decisions_settings_vars = {key: tk.StringVar(value=default)
+                                       for key, (_, default) in DECISIONS_SETTINGS.items()}
+        self.decisions_fallback_var = tk.BooleanVar(value=True)
+        self.model_var = tk.StringVar(value=DEFAULT_API_MODEL)
         self.top_k_var = tk.StringVar(value="4")
         self.local_confidence_var = tk.StringVar(value="0.78")
         self.local_margin_var = tk.StringVar(value="0.06")
@@ -84,6 +119,10 @@ class SorterApp(tk.Tk):
         self.save_records_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="待機中")
         self._load_preferences()
+        # Every launch starts on the recommended route, including old installations.
+        # Other saved settings are restored; the user can switch modes for this run.
+        self.mode_var.set(DEFAULT_MODE_LABEL)
+        self.simple_mode_var.set(DEFAULT_MODE_LABEL)
 
         self._build_ui()
         self.bind("<Configure>", self._resize_window)
@@ -147,6 +186,7 @@ class SorterApp(tk.Tk):
         self.details_canvas.bind("<Configure>", lambda event: self.details_canvas.itemconfigure(detail_window, width=event.width))
         self.bind("<MouseWheel>", self._scroll_details)
         tabs = ttk.Notebook(detail_content)
+        self.detail_tabs = tabs
         tabs.pack(fill="x")
         settings = ttk.Frame(tabs, padding=10)
         advanced = ttk.Frame(tabs, padding=16)
@@ -154,6 +194,12 @@ class SorterApp(tk.Tk):
         tabs.add(advanced, text="一括判定・人物領域・比較")
         economy = ttk.Frame(tabs, padding=16)
         tabs.add(economy, text="ローカル優先・ピンぼけ")
+        self.jev_settings = ttk.Frame(tabs, padding=16)
+        tabs.add(self.jev_settings, text="Jev実験設定")
+        self._build_jev_settings(self.jev_settings)
+        self.decisions_settings = ttk.Frame(tabs, padding=16)
+        tabs.add(self.decisions_settings, text="DecisionAPI設定")
+        self._build_decisions_settings(self.decisions_settings)
         ttk.Checkbutton(economy, text="人物領域でローカル判定を優先する", variable=self.local_first_var).pack(anchor="w", pady=6)
         ttk.Label(economy, text="切り抜きを変えた人物照合と、検出サイズを変えた人数確認が一致する写真はAPIを省略します。"
                   "鏡・スクリーン・未知の外見では誤る場合があります。OFFで従来の人数API確認に戻せます。", wraplength=740).pack(anchor="w")
@@ -184,6 +230,8 @@ class SorterApp(tk.Tk):
                   "写真内の全員を囲み、鏡・ポスターは囲まないでください。", wraplength=720).pack(anchor="w")
         ttk.Button(advanced, text="4方式を同じ写真で比較（写真移動なし・API課金あり）",
                    command=self._compare).pack(anchor="w", pady=(16, 6))
+        ttk.Button(advanced, text="従来ハイブリッド／Jev実験を比較（写真移動なし・両API課金あり）",
+                   command=lambda: self._compare(['hybrid', 'jev'])).pack(anchor="w", pady=6)
         ttk.Label(advanced, text="ハイブリッド／固定参考1枚・2枚・4枚を順に実行します。"
                   "最大枚数の設定を使用します。比較結果は出力先の「比較結果」に保存します。",
                   wraplength=720).pack(anchor="w")
@@ -200,7 +248,7 @@ class SorterApp(tk.Tk):
         ttk.Label(settings, text="APIモデル").grid(row=0, column=2, sticky="w", padx=(16, 8), pady=4)
         ttk.Entry(settings, textvariable=self.model_var).grid(row=0, column=3, sticky="ew", pady=4)
 
-        ttk.Label(settings, text="APIキー").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
+        ttk.Label(settings, text="OpenAI APIキー").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
         ttk.Entry(settings, textvariable=self.key_var, show="●").grid(
             row=1, column=1, columnspan=3, sticky="ew", pady=4
         )
@@ -288,6 +336,7 @@ class SorterApp(tk.Tk):
 
         self.initial_run_notice = ttk.Label(
             outer, text="初回実行時はモデルデータのダウンロード等で時間がかかります。", wraplength=850)
+        self._update_mode_descriptions()
         self.initial_run_notice.pack(anchor="w", fill="x", pady=(10, 0))
         self.initial_run_notice.bind("<Configure>", lambda event: self.initial_run_notice.configure(wraplength=max(200, event.width)))
         self.api_transfer_notice = ttk.Label(
@@ -322,7 +371,7 @@ class SorterApp(tk.Tk):
         panel.columnconfigure(1, weight=1)
         ttk.Label(panel, text="モード").grid(row=0, column=0, sticky="w", padx=(0, 12), pady=4)
         ttk.Combobox(panel, textvariable=self.simple_mode_var, values=list(SIMPLE_MODE_LABELS),
-                     state="readonly", width=32).grid(row=0, column=1, sticky="w", pady=4)
+                     state="readonly", width=36).grid(row=0, column=1, sticky="w", pady=4)
         self.simple_mode_description = tk.StringVar()
         ttk.Label(panel, textvariable=self.simple_mode_description, wraplength=740).grid(
             row=1, column=1, sticky="ew", pady=(2, 10))
@@ -341,6 +390,13 @@ class SorterApp(tk.Tk):
         self.simple_mode_description.set(MODE_DESCRIPTIONS[SIMPLE_MODE_LABELS[self.simple_mode_var.get()]])
         self.advanced_mode_description.set(MODE_DESCRIPTIONS[MODE_LABELS[self.mode_var.get()]]
             + "（詳細設定で品質分類などをOFFにすると、その機能は使われません。）")
+        if hasattr(self, "initial_run_notice"):
+            mode = (SIMPLE_MODE_LABELS[self.simple_mode_var.get()]
+                    if self.settings_tabs.select() == str(self.simple_settings) else MODE_LABELS[self.mode_var.get()])
+            self.initial_run_notice.configure(text=(
+                "DecisionAPI・固定参考APIはローカルモデルのダウンロードなしで利用できます。"
+                if mode in {"decisions", "api"} else
+                "初回実行時はモデルデータのダウンロード等で時間がかかります。"))
         self.after_idle(self._resize_settings)
 
     def _scroll_details(self, event) -> None:
@@ -369,10 +425,15 @@ class SorterApp(tk.Tk):
             if selected == str(self.detailed_settings):
                 self.mode_var.set(self.simple_mode_var.get())
             else:
-                self.simple_mode_var.set(self.mode_var.get() if self.mode_var.get() in SIMPLE_MODE_LABELS
-                                         else "ローカルのみ（人数判定なし）")
+                label = self.mode_var.get()
+                if label in SIMPLE_MODE_LABELS:
+                    self.simple_mode_var.set(label)
+                elif MODE_LABELS.get(label) == "api":
+                    self.simple_mode_var.set("人物領域ハイブリッド")
+                else:
+                    self.simple_mode_var.set("ローカルのみ（人数判定なし）")
             self._settings_page = selected
-        self.after_idle(self._resize_settings)
+        self._update_mode_descriptions()
 
     def _path_row(self, parent: ttk.LabelFrame, row: int, label: str, variable: tk.StringVar) -> None:
         parent.columnconfigure(1, weight=1)
@@ -426,7 +487,100 @@ class SorterApp(tk.Tk):
                 variable=self.class_var,
             ).grid(row=index // 5, column=index % 5, sticky="w", padx=(0, 18), pady=2)
 
-    def _build_config(self) -> SorterConfig:
+    def _build_jev_settings(self, panel):
+        panel.columnconfigure(1, weight=1)
+        ttk.Label(panel, text="Jev APIキー").grid(row=0, column=0, sticky="w", padx=(0, 12), pady=5)
+        self.jev_key_entry = ttk.Entry(panel, textvariable=self.jev_key_var, show="●")
+        self.jev_key_entry.grid(row=0, column=1, sticky="ew", pady=5)
+        ttk.Button(panel, text="APIキーを保存", command=self._save_api_keys_clicked).grid(
+            row=0, column=2, padx=(12, 0), pady=5)
+        ttk.Label(panel, text="JEV_API_Key として .env に保存します。入力は伏字です。OpenAIキーも別途必要です。\n"
+                  "保存ボタンまたは実行時に保存し、次回起動時に読み込みます。空欄では保存済みキーを削除しません。",
+                  wraplength=720).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 14))
+        for row, (key, (label, default)) in enumerate(JEV_SETTINGS.items(), start=2):
+            integer = key == "jev_min_features"
+            ttk.Label(panel, text=label).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=5)
+            ttk.Spinbox(panel, textvariable=self.jev_settings_vars[key], from_=1 if integer else 0.,
+                        to=5 if integer else 1., increment=1 if integer else .01, width=10).grid(
+                            row=row, column=1, sticky="w", pady=5)
+            ttk.Label(panel, text=f"初期値 {default}").grid(row=row, column=2, sticky="w", padx=(12, 0))
+        ttk.Button(panel, text="しきい値を初期値へ戻す", command=self._reset_jev_settings).grid(
+            row=7, column=0, columnspan=3, sticky="w", pady=(10, 8))
+        ttk.Label(panel, text="小さくするとJevの対象・採用が増える可能性がありますが、誤分類も増え得ます。確信度は正答率ではありません。\n"
+                  "これらは作業写真用の基準です。参考特徴の作成基準は固定です。単独・鮮明・不確実でないこと、"
+                  "固有特徴があること、ローカル1位との一致は引き続き必須です。\n"
+                  "設定値は実行・比較時に保存します。まず写真を移動しない比較でご確認ください。",
+                  wraplength=720).grid(row=8, column=0, columnspan=3, sticky="w", pady=5)
+
+    def _build_decisions_settings(self, panel):
+        panel.columnconfigure(1, weight=1)
+        ttk.Label(panel, text="OpenAI APIキー（判定設定と共通）").grid(row=0, column=0, sticky="w", pady=5)
+        ttk.Entry(panel, textvariable=self.key_var, show="●").grid(row=0, column=1, sticky="ew", pady=5)
+        ttk.Button(panel, text="APIキーを保存", command=self._save_api_keys_clicked).grid(row=0, column=2, padx=12)
+        ttk.Label(panel, text="OPENAI_API_KEYを使用します。Jevキーは不要です。DecisionAPIはgpt-6-luna固定。GPT再判定は「判定設定」のモデルを使用（初期値GPT 6 Luna）。\n"
+                  "写真・参考画像を直接入力し、人数・中央の主役・人物照合を1回で判定します。",
+                  wraplength=720).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
+        for row, (key, (label, default)) in enumerate(DECISIONS_SETTINGS.items(), start=2):
+            ttk.Label(panel, text=label).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=5)
+            ttk.Spinbox(panel, textvariable=self.decisions_settings_vars[key], from_=.51 if key == "decisions_dominant_probability" else 0.,
+                        to=1., increment=.01, width=10).grid(row=row, column=1, sticky="w", pady=5)
+            ttk.Label(panel, text=f"初期値 {default}").grid(row=row, column=2, sticky="w", padx=12)
+        ttk.Checkbutton(panel, text="曖昧な写真をGPTで再判定（追加料金あり）",
+                        variable=self.decisions_fallback_var).grid(row=7, column=0, columnspan=3, sticky="w", pady=4)
+        ttk.Button(panel, text="DecisionAPI設定を初期値へ戻す", command=self._reset_decisions_settings).grid(
+            row=8, column=0, columnspan=3, sticky="w", pady=5)
+        ttk.Button(panel, text="固定参考API／Decisionsを同じ写真で比較（写真移動なし）",
+                   command=lambda: self._compare(['api1', 'decisions'])).grid(row=9, column=0, columnspan=3, sticky="w", pady=5)
+        ttk.Label(panel, text="曖昧な写真はGPTで再判定し、GPTでも確定できない写真は「要確認」へ。再判定には追加料金がかかります。\n"
+                  "中央の主役をソロ扱いする設定は「判定設定」で変更します。背景が大勢でも主役が明確なら個人に分類。\n"
+                  "低いしきい値は誤分類を増やす場合があります。確信度・確率は正答率ではありません。\n"
+                  "参考画像は各人物最大3枚（_local以外）。参考＋作業写真は1回128枚まで。ピンぼけ分類なし。\n"
+                  "処理記録を保存すると、確率・不採用理由・利用量がCSVと集計JSONに残ります。まず20枚でお試しください。",
+                  wraplength=720).grid(row=10, column=0, columnspan=3, sticky="w", pady=8)
+
+    def _reset_decisions_settings(self):
+        self.decisions_fallback_var.set(True)
+        for key, (_, default) in DECISIONS_SETTINGS.items():
+            self.decisions_settings_vars[key].set(default)
+
+    def _decisions_config_values(self):
+        values = {}
+        for key, variable in self.decisions_settings_vars.items():
+            label = DECISIONS_SETTINGS[key][0]
+            try:
+                value = float(variable.get())
+            except ValueError:
+                raise ValueError(f"{label}に有効な数値を入力してください。") from None
+            if not 0 <= value <= 1:
+                raise ValueError(f"{label}は0～1で指定してください。")
+            if key == "decisions_dominant_probability" and value <= .5:
+                raise ValueError(f"{label}は0.5より大きくしてください。")
+            values[key] = value
+        return values
+
+    def _reset_jev_settings(self):
+        for key, (_, default) in JEV_SETTINGS.items():
+            self.jev_settings_vars[key].set(default)
+
+    def _save_api_keys_clicked(self):
+        if self._persist_api_key():
+            messagebox.showinfo("APIキーを保存しました", "入力済みのAPIキーを .env に保存しました。")
+
+    def _jev_config_values(self):
+        values = {}
+        for key, variable in self.jev_settings_vars.items():
+            label = JEV_SETTINGS[key][0]
+            try:
+                value = int(variable.get()) if key == "jev_min_features" else float(variable.get())
+            except ValueError:
+                raise ValueError(f"{label}に有効な数値を入力してください。") from None
+            low, high = (1, 5) if key == "jev_min_features" else (0, 1)
+            if not low <= value <= high:
+                raise ValueError(f"{label}は{low}～{high}で指定してください。")
+            values[key] = value
+        return values
+
+    def _build_config(self, *, include_jev=False, include_decisions=False) -> SorterConfig:
         simple = self.settings_tabs.select() == str(self.simple_settings)
         mode = SIMPLE_MODE_LABELS[self.simple_mode_var.get()] if simple else MODE_LABELS[self.mode_var.get()]
         reference_root = Path(self.references_var.get()).expanduser()
@@ -440,14 +594,18 @@ class SorterApp(tk.Tk):
             work_dir=Path(self.work_var.get()), reference_dir=available_classes[selected_class],
             output_dir=Path(self.output_var.get()) / selected_class, mode=mode,
             api_key=self.key_var.get().strip() or os.getenv("OPENAI_API_KEY"),
+            jev_api_key=self.jev_key_var.get().strip() or os.getenv("JEV_API_Key"),
             max_files=int(self.max_files_var.get()), cache_dir=model_cache_dir(self.project_dir),
+            **({'decisions_gpt_fallback': self.decisions_fallback_var.get()} if not simple else {}),
+            **(self._decisions_config_values() if not simple and (mode == "decisions" or include_decisions) else {}),
         )
         if simple:
             return SorterConfig(**common, api_concurrency=4,
                                 regional_local_first=mode == "regional", quality_filter=mode == "regional")
         return SorterConfig(
             **common,
-            model=self.model_var.get().strip() or "gpt-5.6-luna",
+            **(self._jev_config_values() if mode == "jev" or include_jev else {}),
+            model=self.model_var.get().strip() or DEFAULT_API_MODEL,
             local_top_k=int(self.top_k_var.get()),
             local_confidence=float(self.local_confidence_var.get()),
             local_margin=float(self.local_margin_var.get()),
@@ -472,25 +630,40 @@ class SorterApp(tk.Tk):
         return {'mode': self.mode_var, 'simple_mode': self.simple_mode_var, 'concurrency': self.concurrency_var,
                 'reuse_reference_regions': self.reference_cache_var, 'share_burst_identity': self.burst_var,
                 'local_first': self.local_first_var,
-                'quality_filter': self.quality_var, 'quality_api_review': self.quality_api_var}
+                'quality_filter': self.quality_var, 'quality_api_review': self.quality_api_var,
+                'decisions_gpt_fallback': self.decisions_fallback_var,
+                **self.jev_settings_vars, **self.decisions_settings_vars}
 
     def _load_preferences(self):
         try:
             data = json.loads((self.project_dir / 'アプリデータ/settings.json').read_text(encoding='utf-8'))
             for key, variable in self._preference_vars().items():
                 value = data.get(key)
+                if key in {'mode', 'simple_mode'}:
+                    value = {
+                        'Decisions画像判定（実験）': 'DecisionAPI画像判定（おすすめ）',
+                        'GPT画像判定（固定参考API）': '固定参考API',
+                        '人物領域ハイブリッド（試験）': '人物領域ハイブリッド',
+                        '従来ハイブリッド': 'ハイブリッド',
+                    }.get(value, value) if isinstance(value, str) else value
+                    if key == 'simple_mode' and value == '固定参考API':
+                        value = '人物領域ハイブリッド'
                 if isinstance(variable, tk.BooleanVar) and isinstance(value, bool):
                     variable.set(value)
-                elif key == 'mode' and value == '人物領域ハイブリッド（試験）':
-                    variable.set('人物領域ハイブリッド')
-                elif key == 'mode' and value == '従来ハイブリッド':
-                    variable.set('ハイブリッド')
                 elif key == 'mode' and value in MODE_LABELS:
                     variable.set(value)
                 elif key == 'simple_mode' and value in SIMPLE_MODE_LABELS:
                     variable.set(value)
                 elif key == 'concurrency' and str(value) in [str(n) for n in range(1, 9)]:
                     variable.set(str(value))
+                elif key in (JEV_SETTINGS | DECISIONS_SETTINGS) and type(value) in (str, int, float):
+                    try:
+                        parsed = int(str(value)) if key == "jev_min_features" else float(value)
+                        low, high = (1, 5) if key == "jev_min_features" else (0, 1)
+                        if low <= parsed <= high and (key != 'decisions_dominant_probability' or parsed > .5):
+                            variable.set(str(value))
+                    except ValueError:
+                        pass
         except (OSError, ValueError, TypeError, AttributeError):
             pass
 
@@ -513,7 +686,7 @@ class SorterApp(tk.Tk):
             reference_dir = Path(self.references_var.get()) / self.class_var.get()
             identities = discover_reference_catalog(reference_dir)
         except ValueError as exc:
-            messagebox.showerror("参考画像", str(exc))
+            messagebox.showerror("参考画像", safe_exception(exc))
             return
         selected = selected or filedialog.askopenfilename(
             title="人物を確認して参考に追加する写真を選択",
@@ -527,7 +700,7 @@ class SorterApp(tk.Tk):
             from PIL import ImageTk
             preview = ImageTk.PhotoImage(resized_for_model(open_rgb(source), 640))
         except (OSError, ValueError) as exc:
-            messagebox.showerror("画像を開けません", str(exc))
+            messagebox.showerror("画像を開けません", safe_exception(exc))
             return
         dialog = tk.Toplevel(self)
         dialog.title("参考画像に追加する人物の確認")
@@ -552,7 +725,7 @@ class SorterApp(tk.Tk):
             try:
                 destination, added = add_confirmed_reference(reference_dir, identity_var.get(), source, local_only=local_only_var.get())
             except (OSError, ValueError) as exc:
-                messagebox.showerror("参考画像の追加", str(exc), parent=dialog)
+                messagebox.showerror("参考画像の追加", safe_exception(exc), parent=dialog)
                 return
             self._append_log(f"参考画像{'を追加' if added else 'は登録済み'}: {destination}")
             self.status_var.set("参考画像を追加しました。次回のローカル判定から利用します。" if added else "この写真は登録済みです。")
@@ -572,7 +745,7 @@ class SorterApp(tk.Tk):
             from .reference_suggestions import suggest_references
             suggestions = suggest_references(Path(manifest), Path(self.references_var.get()) / self.class_var.get())
         except (OSError, ValueError) as exc:
-            messagebox.showerror('補強候補', str(exc))
+            messagebox.showerror('補強候補', safe_exception(exc))
             return
         if not suggestions:
             messagebox.showinfo('補強候補', '未登録の補強候補はありません。品質が良好な単独写真で、人物照合APIを使った写真が対象です。')
@@ -604,12 +777,15 @@ class SorterApp(tk.Tk):
         if self.worker and self.worker.is_alive():
             return
         try:
-            config = self._build_config()
+            config = self._build_config(include_jev=bool(strategies and 'jev' in strategies),
+                                        include_decisions=bool(strategies and 'decisions' in strategies))
             if not config.api_key:
                 raise ValueError("比較にはAPIキーが必要です")
+            if strategies and 'jev' in strategies and not (config.jev_api_key or '').strip():
+                raise ValueError("Jev比較には.envのJEV_API_Keyが必要です")
             validate_config(config)
         except (ValueError, KeyError) as exc:
-            messagebox.showerror("比較設定", str(exc))
+            messagebox.showerror("比較設定", safe_exception(exc))
             return
         if not self._persist_api_key():
             return
@@ -618,6 +794,7 @@ class SorterApp(tk.Tk):
         strategies = strategies or ['hybrid', 'api1', 'api2', 'api4']
         output = config.output_dir / "比較結果" / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         self.cancel_event.clear()
+        self._save_preferences()
         self.start_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
         self.status_var.set("同じ写真で設定を比較しています。写真は移動しません。")
@@ -627,7 +804,7 @@ class SorterApp(tk.Tk):
                     progress=lambda text: self.events.put(("log", text)), cancel_event=self.cancel_event)
                 self.events.put(("comparison_done", (result, output)))
             except Exception as exc:
-                self.events.put(("error", exc))
+                self.events.put(("error", safe_exception(exc)))
         self.worker = threading.Thread(target=run, daemon=True)
         self.worker.start()
 
@@ -640,7 +817,7 @@ class SorterApp(tk.Tk):
         except (ValueError, KeyError) as exc:
             messagebox.showerror("設定エラー", f"数値または設定を確認してください。\n{exc}")
             return
-        if config.mode in {"hybrid", "api", "regional"} and not config.api_key:
+        if config.mode in {"hybrid", "api", "regional", "jev", "decisions"} and not config.api_key:
             messagebox.showerror("APIキーが必要です", "APIキーを入力するかOPENAI_API_KEYを設定してください。")
             return
 
@@ -652,7 +829,8 @@ class SorterApp(tk.Tk):
         self.start_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
         self.progress_bar["value"] = 0
-        self.status_var.set("準備中… 初回のローカルモデル読込には時間がかかります。")
+        self.status_var.set("Decisions用の参考画像を準備中…" if config.mode == "decisions"
+                            else "準備中… 初回のローカルモデル読込には時間がかかります。")
         self._append_log(
             f"クラス「{self.class_var.get()}」を対象に処理を開始します。"
             + ("判定だけ実行し、写真は移動しません。" if config.dry_run else "成功した画像は振り分け先へ移動します。")
@@ -662,9 +840,10 @@ class SorterApp(tk.Tk):
             try:
                 sorter = PhotoSorter(config, progress=self._on_progress, cancel_event=self.cancel_event)
                 records = sorter.run()
-                self.events.put(("done", (records, config.model, sorter.elapsed_seconds, config.dry_run)))
+                self.events.put(("done", (records, config.model, sorter.elapsed_seconds, config.dry_run,
+                                         config.mode, self.cancel_event.is_set())))
             except Exception as exc:
-                self.events.put(("error", exc))
+                self.events.put(("error", safe_exception(exc)))
 
         self.worker = threading.Thread(target=run, daemon=True)
         self.worker.start()
@@ -672,6 +851,7 @@ class SorterApp(tk.Tk):
     def _persist_api_key(self) -> bool:
         try:
             save_api_key(self.project_dir, self.key_var.get())
+            save_jev_api_key(self.project_dir, self.jev_key_var.get())
         except (OSError, ValueError):
             messagebox.showerror("APIキーを保存できません", ".env に保存できませんでした。APIキーの改行や、アプリフォルダの書き込み権限を確認してください。")
             return False
@@ -683,6 +863,45 @@ class SorterApp(tk.Tk):
 
     def _on_progress(self, event: ProgressEvent) -> None:
         self.events.put(("progress", event))
+
+    def _show_completion(self, report: CompletionReport) -> tk.Toplevel:
+        from tkinter.scrolledtext import ScrolledText
+
+        dialog = tk.Toplevel(self)
+        dialog.title(report.title)
+        dialog.transient(self)
+        dialog.resizable(True, True)
+        panel = ttk.Frame(dialog, padding=18)
+        panel.pack(fill="both", expand=True)
+        ttk.Label(panel, text=report.title, font=("Yu Gothic UI", 14, "bold")).pack(anchor="w")
+        overview = ttk.Label(panel, text=report.message, justify="left", wraplength=510)
+        overview.pack(anchor="w", fill="x", pady=(12, 14))
+        details = ScrolledText(panel, width=66, height=13, wrap="word", font=("Yu Gothic UI", 10))
+        details.insert("1.0", report.details)
+        details.configure(state="disabled")
+        buttons = ttk.Frame(panel)
+        buttons.pack(fill="x")
+
+        def toggle_details():
+            if details.frame.winfo_manager():
+                details.pack_forget()
+                toggle.configure(text="詳細を表示")
+            else:
+                details.pack(fill="both", expand=True, pady=(0, 12), before=buttons)
+                toggle.configure(text="詳細を閉じる")
+            dialog.update_idletasks()
+            dialog.geometry("")
+
+        toggle = ttk.Button(buttons, text="詳細を表示", command=toggle_details)
+        toggle.pack(side="left")
+        close = ttk.Button(buttons, text="閉じる", command=dialog.destroy)
+        close.pack(side="right")
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        dialog.bind("<Return>", lambda _event: dialog.destroy())
+        dialog.update_idletasks()
+        dialog.minsize(dialog.winfo_reqwidth(), dialog.winfo_reqheight())
+        close.focus_set()
+        return dialog
 
     def _poll_events(self) -> None:
         try:
@@ -699,43 +918,12 @@ class SorterApp(tk.Tk):
                     )
                     self._append_log(self.status_var.get())
                 elif kind == "done":
-                    records, model, elapsed_seconds, dry_run = payload  # type: ignore[misc]
-                    errors = sum(bool(record.error) for record in records)  # type: ignore[union-attr]
-                    api_calls = sum(record.api_calls for record in records)  # type: ignore[union-attr]
-                    screen_calls = sum(record.screen_calls for record in records)  # type: ignore[union-attr]
-                    input_tokens = sum(record.input_tokens for record in records)  # type: ignore[union-attr]
-                    cached_tokens = sum(record.cached_input_tokens for record in records)  # type: ignore[union-attr]
-                    cache_write_tokens = sum(record.cache_write_input_tokens for record in records)  # type: ignore[union-attr]
-                    output_tokens = sum(record.output_tokens for record in records)  # type: ignore[union-attr]
-                    local_count = sum(record.decision_source in {"local", "exact", "regional_local"} and record.local_gate != "no_candidates"
-                                      and record.route not in {"要確認", "エラー"} for record in records)
-                    cache_hits = sum(record.api_cache_hits for record in records)
-                    cost_text = format_cost_estimate(
-                        estimate_api_cost(
-                            model,
-                            input_tokens,
-                            cached_tokens,
-                            cache_write_tokens,
-                            output_tokens,
-                        ),
-                        model,
-                    )
+                    records, model, elapsed_seconds, dry_run, mode, cancelled = payload
+                    report = build_completion_report(records, model, elapsed_seconds, dry_run, mode, cancelled)
                     self._finish_ui()
-                    message = (
-                        f"{'判定のみ完了（写真移動なし）' if dry_run else '振り分け完了'}。今回の処理 {len(records)}枚、エラー {errors}枚、"
-                        f"API {api_calls}回（事前人数 {screen_calls}、人物照合 {api_calls - screen_calls}）、"
-                        f"ローカル確定 {local_count}枚、連写照合共有 {sum(bool(r.burst_shared_from) for r in records)}枚、"
-                        f"参考領域の再利用 {sum(r.reference_cache_hits for r in records)}回、"
-                        f"API不要 {sum(r.api_calls - r.reference_setup_calls == 0 and not r.error for r in records)}枚、"
-                        f"参考領域の初回確認 {sum(r.reference_setup_calls for r in records)}回（人数確認の内数）、"
-                        f"ピンぼけ {sum(r.route == 'ピンぼけ' for r in records)}枚、品質要確認 {sum(r.route == '品質要確認' for r in records)}枚、"
-                        f"入力 {input_tokens:,} tokens（キャッシュ {cached_tokens:,}、"
-                        f"書込 {cache_write_tokens:,}）、出力 {output_tokens:,} tokens、"
-                        f"{cost_text}、所要時間 {format_elapsed_time(elapsed_seconds)}。"
-                    )
-                    self.status_var.set(message)
-                    self._append_log(message)
-                    messagebox.showinfo("振り分け完了", message)
+                    self.status_var.set(report.status)
+                    self._append_log(report.message + "\n\n" + report.details)
+                    self._show_completion(report)
                 elif kind == "log":
                     self.status_var.set(str(payload))
                     self._append_log(str(payload))
@@ -746,6 +934,10 @@ class SorterApp(tk.Tk):
                     for name, summary in result["strategies"].items():
                         cost = summary["estimated_cost"]
                         price = f"約{cost['jpy']:.2f}円" if cost else "単価未登録"
+                        if summary.get('estimated_cost_scope') == 'openai_only_excludes_jev':
+                            price += '（OpenAI分のみ・Jev別途）'
+                        if summary.get('estimated_cost_scope') == 'openai_decisions':
+                            price += '（DecisionAPI・基準料金）'
                         lines.append(f"{name}: {format_elapsed_time(summary['elapsed_seconds'])}・{price}・エラー{summary['errors']}枚")
                     text = "\n".join(lines) + f"\n保存先: {output}\n正解ラベルなしの比較です。分類結果も確認してください。"
                     self._append_log(text)
@@ -755,7 +947,7 @@ class SorterApp(tk.Tk):
                     self._finish_ui()
                     self.status_var.set("処理を開始できませんでした。")
                     self._append_log(f"エラー: {payload}")
-                    messagebox.showerror("処理エラー", str(payload))
+                    messagebox.showerror("処理エラー", redact_sensitive_text(payload))
         except queue.Empty:
             pass
         self.after(100, self._poll_events)
@@ -765,6 +957,8 @@ class SorterApp(tk.Tk):
         self.cancel_button.configure(state="disabled")
 
     def _append_log(self, line: str) -> None:
+        register_secrets(self.key_var.get(), self.jev_key_var.get())
+        line = redact_sensitive_text(line)
         self.log.configure(state="normal")
         self.log.insert("end", line + "\n")
         self.log.see("end")

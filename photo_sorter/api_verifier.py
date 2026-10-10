@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .log_safety import register_secrets
+
 import hashlib
 import threading
 from dataclasses import asdict
@@ -122,6 +124,7 @@ def _subject_box(parsed):
 
 class ApiVerifier:
     def __init__(self, api_key: str, model: str, max_side: int, cache_dir: Path | None = None) -> None:
+        register_secrets(api_key)
         self._transport = threading.local()
         self.client = OpenAI(api_key=api_key, timeout=90.0, max_retries=2,
                             http_client=DefaultHttpxClient(event_hooks={'request': [self._track_request]}))
@@ -188,7 +191,7 @@ class ApiVerifier:
 
     def _speed_options(self) -> dict[str, object]:
         """Use low-latency controls only for model families known to support them."""
-        if self.model.lower().startswith("gpt-5.6"):
+        if self.model.lower().startswith(("gpt-5.6", "gpt-6-luna")):
             return {
                 "reasoning": {"effort": "none"},
                 "text": {"verbosity": "low"},

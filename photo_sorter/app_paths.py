@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv, set_key
 
 APP_NAME = "MidnaUdon EventPhotoSorter"
-APP_VERSION = "1.00"
+APP_VERSION = "1.10"
 EXECUTABLE_NAME = "MidnaUdon EventPhotoSorter"
 
 
@@ -37,10 +37,19 @@ def model_cache_dir(base_dir: Path) -> Path:
 
 def save_api_key(base_dir: Path, api_key: str) -> None:
     """Update only the supplied key, preserving other .env settings and comments."""
+    _save_named_api_key(base_dir, api_key, "OPENAI_API_KEY")
+
+
+def save_jev_api_key(base_dir: Path, api_key: str) -> None:
+    """Use the user's existing, case-sensitive Jev environment variable name."""
+    _save_named_api_key(base_dir, api_key, "JEV_API_Key")
+
+
+def _save_named_api_key(base_dir: Path, api_key: str, variable: str) -> None:
     api_key = api_key.strip()
     if not api_key:
         return
     if any(character in api_key for character in "\r\n\x00"):
         raise ValueError("APIキーに改行や無効な文字が含まれています。")
-    set_key(str(base_dir / ".env"), "OPENAI_API_KEY", api_key, quote_mode="always")
-    os.environ["OPENAI_API_KEY"] = api_key
+    set_key(str(base_dir / ".env"), variable, api_key, quote_mode="always")
+    os.environ[variable] = api_key

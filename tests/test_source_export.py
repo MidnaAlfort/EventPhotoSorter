@@ -31,6 +31,50 @@ class SourceExportTests(unittest.TestCase):
             with zipfile.ZipFile(archive) as zipped:
                 self.assertFalse(any("/.git/" in p for p in zipped.namelist()))
 
+    def test_public_git_normalization_matches_manifest_and_zip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "development"
+            root.mkdir()
+            (root / "README.md").write_bytes(b"public documentation\r\nsecond line\r\n")
+            (root / ".gitattributes").write_bytes(b"* text=auto\r\n")
+            with patch("tools.export_source.ROOT_FILES", ("README.md", ".gitattributes")), patch("tools.export_source.ASSETS", ()):
+                folder, archive = export_source(root, Path(directory) / "public")
+            initialize_public_repository(folder)
+            committed = subprocess.check_output(["git", "-C", str(folder), "show", "HEAD:README.md"])
+            self.assertEqual(committed, b"public documentation\nsecond line\n")
+            manifest = json.loads((folder / "SOURCE_MANIFEST.json").read_text("utf-8"))
+            entry = next(item for item in manifest if item["path"] == "README.md")
+            self.assertEqual(hashlib.sha256(committed).hexdigest(), entry["sha256"])
+            with zipfile.ZipFile(archive) as zipped:
+                self.assertEqual(zipped.read("public/README.md"), committed)
+
+    def test_original_license_bytes_survive_export_and_git(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "development"
+            root.mkdir()
+            (root / "README.md").write_bytes(b"public source\r\n")
+            (root / ".gitattributes").write_bytes(b"* text=auto eol=lf\nlicenses/** -text -whitespace\n")
+            (root / "licenses").mkdir()
+            original = b"original license text\r\ntrailing whitespace  \r\n"
+            (root / "licenses/LICENSE.txt").write_bytes(original)
+            with patch("tools.export_source.ROOT_FILES", ("README.md", ".gitattributes")), patch("tools.export_source.ASSETS", ()):
+                folder, archive = export_source(root, Path(directory) / "public")
+            initialize_public_repository(folder)
+            committed = subprocess.check_output(["git", "-C", str(folder), "show", "HEAD:licenses/LICENSE.txt"])
+            self.assertEqual(committed, original)
+            with zipfile.ZipFile(archive) as zipped:
+                self.assertEqual(zipped.read("public/licenses/LICENSE.txt"), original)
+
+    def test_nonempty_env_template_prevents_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env.example").write_text("JEV_API_Key=" + "opaque-" + "q" * 30)
+            output = root / "export"
+            with patch("tools.export_source.ROOT_FILES", (".env.example",)), patch("tools.export_source.ASSETS", ()):
+                with self.assertRaises(ValueError):
+                    export_source(root, output)
+            self.assertFalse(output.exists())
+
     def test_export_allowlist_keeps_source_and_excludes_private_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "development"

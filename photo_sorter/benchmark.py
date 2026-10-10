@@ -1,6 +1,8 @@
 """Compare strategies on identical photos without moving or overwriting originals."""
 from __future__ import annotations
 
+from .log_safety import redact_structure
+
 import argparse
 import json
 import os
@@ -10,14 +12,18 @@ from pathlib import Path
 from .app_paths import application_dir, load_app_environment, model_cache_dir
 from .catalog import file_sha256, list_images
 from .engine import PhotoSorter
-from .models import SorterConfig
+from .models import DEFAULT_API_MODEL, SorterConfig
 
 STRATEGIES = {"hybrid": ("hybrid", 1), "api1": ("api", 1), "api2": ("api", 2),
               "api4": ("api", 4), "regional": ("regional", 1)}
 STRATEGIES.update({key: ('regional', 1) for key in ('regional_local', 'regional_quality', 'regional_c3', 'regional_c4', 'regional_c6')})
+STRATEGIES["jev"] = ("jev", 1)
+STRATEGIES["decisions"] = ("decisions", 1)
 
 
 def compare(config, output, strategies, labels=None, progress=print, cancel_event=None):
+    if "jev" in strategies and not (config.jev_api_key or "").strip():
+        raise ValueError("Jev比較には.envのJEV_API_Keyが必要です。")
     labels = labels or {}
     images = list_images(config.work_dir)
     if config.max_files:
@@ -54,10 +60,10 @@ def compare(config, output, strategies, labels=None, progress=print, cancel_even
                        disagreements=disagreements, records=[r.to_dict() for r in records])
         report["strategies"][strategy] = summary
         output.mkdir(parents=True, exist_ok=True)
-        (output / "comparison.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        (output / "comparison.json").write_text(json.dumps(redact_structure(report), ensure_ascii=False, indent=2), encoding="utf-8")
     report["identical_inputs_verified"] = all(Path(p).is_file() and file_sha256(Path(p)) == digest
                                                for p, digest in before.items())
-    (output / "comparison.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    (output / "comparison.json").write_text(json.dumps(redact_structure(report), ensure_ascii=False, indent=2), encoding="utf-8")
     if not report["identical_inputs_verified"]:
         raise RuntimeError("比較中に入力写真が変更されました。結果を同条件比較に使用しないでください。")
     return report
@@ -71,13 +77,14 @@ def main():
     parser.add_argument("--labels", type=Path)
     parser.add_argument("--strategies", nargs="+", choices=STRATEGIES, default=["hybrid", "api1", "api2", "api4"])
     parser.add_argument("--max-files", type=int, default=20)
-    parser.add_argument("--model", default="gpt-5.6-luna")
+    parser.add_argument("--model", default=DEFAULT_API_MODEL)
     parser.add_argument("--api-concurrency", type=int, default=3)
     parser.add_argument("--cache", type=Path)
     args = parser.parse_args()
     base = application_dir()
     load_app_environment(base)
     config = SorterConfig(args.work, args.references, args.output, api_key=os.getenv("OPENAI_API_KEY"),
+                          jev_api_key=os.getenv("JEV_API_Key"),
                           model=args.model, max_files=args.max_files, api_concurrency=args.api_concurrency,
                           cache_dir=args.cache or model_cache_dir(base))
     labels = json.loads(args.labels.read_text(encoding="utf-8")) if args.labels else None
