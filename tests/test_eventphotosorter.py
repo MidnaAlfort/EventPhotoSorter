@@ -89,6 +89,9 @@ class SettingsTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         _, work, refs, output = make_sort_tree(self.root, 1)
+        environment = patch.dict(os.environ, {"OPENAI_API_KEY": "inherited-ui-key"})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.app = SorterApp(self.root)
         self.app.withdraw()
         self.app.work_var.set(str(work))
@@ -416,6 +419,29 @@ class SettingsTests(unittest.TestCase):
             self.app._start()
             thread.return_value.start.assert_called_once()
             self.assertEqual(dotenv_values(self.root / ".env")["OPENAI_API_KEY"], "test-ui-key")
+            self.app.key_var.set("inherited-ui-key")
+            self.assertTrue(self.app._persist_api_key())
+            self.assertEqual(dotenv_values(self.root / ".env")["OPENAI_API_KEY"], "test-ui-key")
+
+    def test_environment_key_starts_and_compares_without_saving(self):
+        self.assertEqual(self.app._build_config().api_key, "inherited-ui-key")
+        env_path = self.root / ".env"
+        with patch("photo_sorter.gui.threading.Thread") as thread:
+            self.app._start()
+            thread.return_value.start.assert_called_once()
+            self.assertFalse(env_path.exists())
+
+            original = b"# keep\nOPENAI_API_KEY=\nOTHER=value\n"
+            env_path.write_bytes(original)
+            self.app.worker = None
+            self.app._compare(["decisions"])
+            self.assertEqual(thread.return_value.start.call_count, 2)
+            self.assertEqual(env_path.read_bytes(), original)
+
+        with patch("photo_sorter.gui.messagebox.showinfo") as info:
+            self.app._save_api_keys_clicked()
+        info.assert_called_once()
+        self.assertEqual(env_path.read_bytes(), original)
 
     def test_failed_key_save_does_not_start_worker_or_expose_key(self):
         self.app.key_var.set("test-ui-key")

@@ -108,7 +108,7 @@ APIデータは通常、明示的な共有同意がなければOpenAIのモデ�
 
 ※APIキーは他の人に教えないでください。
 ※.env は平文の設定ファイルです。利用済みフォルダを配る際は、キーや写真・履歴を除いてください。
-※OSにOPENAI_API_KEYを設定している場合は、起動時にその値が優先されます。
+※起動時は .env のOpenAI APIキーを優先します。未設定・空欄の場合はOSの環境変数OPENAI_API_KEYを使用し、そのキーを .env に保存しません。
 
 公式の案内：https://developers.openai.com/api/docs/quickstart
 

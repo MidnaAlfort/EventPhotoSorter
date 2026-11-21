@@ -89,6 +89,9 @@ class SorterApp(tk.Tk):
     def __init__(self, project_dir: Path) -> None:
         super().__init__()
         self.project_dir = project_dir.resolve()
+        self._environment_openai_key = load_app_environment(self.project_dir)
+        openai_key = os.getenv("OPENAI_API_KEY", "")
+        self._saved_openai_key = None if self._environment_openai_key else openai_key
         self.title(f"{APP_NAME} Ver{APP_VERSION}")
         self.geometry("940x940")
         self.minsize(820, 820)
@@ -104,7 +107,7 @@ class SorterApp(tk.Tk):
         self.class_names: list[str] = []
         self.mode_var = tk.StringVar(value=DEFAULT_MODE_LABEL)
         self.simple_mode_var = tk.StringVar(value=DEFAULT_MODE_LABEL)
-        self.key_var = tk.StringVar(value=os.getenv("OPENAI_API_KEY", ""))
+        self.key_var = tk.StringVar(value=openai_key)
         self.jev_key_var = tk.StringVar(value=os.getenv("JEV_API_Key", ""))
         self.jev_settings_vars = {key: tk.StringVar(value=default)
                                   for key, (_, default) in JEV_SETTINGS.items()}
@@ -596,8 +599,7 @@ class SorterApp(tk.Tk):
             self.jev_settings_vars[key].set(default)
 
     def _save_api_keys_clicked(self):
-        if self._persist_api_key():
-            messagebox.showinfo("APIキーを保存しました", "入力済みのAPIキーを .env に保存しました。")
+        self._persist_api_key(notify=True)
 
     def _jev_config_values(self):
         values = {}
@@ -893,13 +895,23 @@ class SorterApp(tk.Tk):
         self.worker = threading.Thread(target=run, daemon=True)
         self.worker.start()
 
-    def _persist_api_key(self) -> bool:
+    def _persist_api_key(self, *, notify: bool = False) -> bool:
+        openai_key = self.key_var.get().strip()
+        jev_key = self.jev_key_var.get().strip()
+        save_openai = bool(openai_key and openai_key not in (self._environment_openai_key, self._saved_openai_key))
         try:
-            save_api_key(self.project_dir, self.key_var.get())
-            save_jev_api_key(self.project_dir, self.jev_key_var.get())
+            if save_openai:
+                save_api_key(self.project_dir, openai_key)
+                self._saved_openai_key = openai_key
+            save_jev_api_key(self.project_dir, jev_key)
         except (OSError, ValueError):
             messagebox.showerror("APIキーを保存できません", ".env に保存できませんでした。APIキーの改行や、アプリフォルダの書き込み権限を確認してください。")
             return False
+        if notify:
+            if save_openai or jev_key:
+                messagebox.showinfo("APIキーを保存しました", "入力したAPIキーを .env に保存しました。")
+            else:
+                messagebox.showinfo("APIキーの設定", "保存する変更はありません。Windowsの環境変数から読み込んだOpenAIキーは実行時にのみ使います。")
         return True
 
     def _cancel(self) -> None:
@@ -1010,7 +1022,5 @@ class SorterApp(tk.Tk):
 
 
 def main() -> None:
-    project_dir = application_dir()
-    load_app_environment(project_dir)
-    app = SorterApp(project_dir)
+    app = SorterApp(application_dir())
     app.mainloop()

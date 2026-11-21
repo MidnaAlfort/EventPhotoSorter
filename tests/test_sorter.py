@@ -655,16 +655,30 @@ class EnvironmentTests(unittest.TestCase):
                 load_app_environment(base)
                 self.assertEqual(os.environ["OPENAI_API_KEY"], "from-dotenv")
 
-    def test_dotenv_does_not_override_existing_environment(self) -> None:
+    def test_dotenv_only_overrides_the_openai_key(self) -> None:
         import os
         from unittest.mock import patch
 
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            (base / ".env").write_text("OPENAI_API_KEY=from-dotenv\n", encoding="utf-8")
-            with patch.dict(os.environ, {"OPENAI_API_KEY": "already-set"}, clear=False):
-                load_app_environment(base)
-                self.assertEqual(os.environ["OPENAI_API_KEY"], "already-set")
+            (base / ".env").write_text("OPENAI_API_KEY=from-dotenv\nJEV_API_Key=local-jev\n", encoding="utf-8")
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "already-set", "JEV_API_Key": "existing-jev"}, clear=True):
+                self.assertIsNone(load_app_environment(base))
+                self.assertEqual(os.environ["OPENAI_API_KEY"], "from-dotenv")
+                self.assertEqual(os.environ["JEV_API_Key"], "existing-jev")
+
+    def test_missing_or_blank_dotenv_key_uses_the_environment(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        for content in (None, "OTHER=value\n", "OPENAI_API_KEY=\n", 'OPENAI_API_KEY="   "\n'):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                if content is not None:
+                    (base / ".env").write_text(content, encoding="utf-8")
+                with patch.dict(os.environ, {"OPENAI_API_KEY": "inherited-key"}, clear=True):
+                    self.assertEqual(load_app_environment(base), "inherited-key")
+                    self.assertEqual(os.environ["OPENAI_API_KEY"], "inherited-key")
 
 
 def discover_identity(category: str, name: str):

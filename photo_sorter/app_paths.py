@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv, set_key
+from dotenv import dotenv_values, load_dotenv, set_key
 
 APP_NAME = "MidnaUdon EventPhotoSorter"
 APP_VERSION = "1.20"
@@ -26,9 +26,20 @@ def bundled_resource(relative: str) -> Path:
     return bundle_dir / relative
 
 
-def load_app_environment(base_dir: Path) -> None:
-    # Existing OS variables win over .env so administrators can override it safely.
-    load_dotenv(base_dir / ".env", override=False)
+def load_app_environment(base_dir: Path) -> str | None:
+    """設定を読み込み、環境変数から採用したOpenAIキーがあれば返す"""
+    env_path = base_dir / ".env"
+    if load_dotenv(env_path, override=False):
+        file_key = (dotenv_values(env_path).get("OPENAI_API_KEY") or "").strip()
+        if file_key:
+            os.environ["OPENAI_API_KEY"] = file_key
+            return None
+
+    environment_key = os.getenv("OPENAI_API_KEY")
+    if environment_key is not None:
+        environment_key = environment_key.strip()
+        os.environ["OPENAI_API_KEY"] = environment_key
+    return environment_key or None
 
 
 def model_cache_dir(base_dir: Path) -> Path:

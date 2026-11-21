@@ -25,7 +25,7 @@
   },
   {
     "path": "README.md",
-    "sha256": "449b634307df9900159cea473e5710967e6fc10ab8c1325c339aa963202dd650"
+    "sha256": "363cdd2b943408e1313842adeb1e559db50ad8c5f9994c531b1294291ffa830d"
   },
   {
     "path": "RUNTIME_TERMS.txt",
@@ -57,11 +57,11 @@
   },
   {
     "path": "docs/Readme.txt",
-    "sha256": "451dc30182f73572f5ee56e602157599228474208c03053a89b530d7c3fd7070"
+    "sha256": "f676bb48c68716e7c282890221b19529965243e23123ef6a70d21019ef521299"
   },
   {
     "path": "docs/使い方.txt",
-    "sha256": "451dc30182f73572f5ee56e602157599228474208c03053a89b530d7c3fd7070"
+    "sha256": "f676bb48c68716e7c282890221b19529965243e23123ef6a70d21019ef521299"
   },
   {
     "path": "licenses/INDEX.md",
@@ -1253,7 +1253,7 @@
   },
   {
     "path": "photo_sorter/app_paths.py",
-    "sha256": "41cf40f26d238046b2db2af3a1384e5ac5e68886d9019ec46e049928954f1888"
+    "sha256": "34c32091d5e50ac4c1cc902e7741f770b9a090e9b4fa1557b03562e481388125"
   },
   {
     "path": "photo_sorter/avatar_gpu.py",
@@ -1317,7 +1317,7 @@
   },
   {
     "path": "photo_sorter/gui.py",
-    "sha256": "3f9e8b5e5741eb7f5080e726f9349fab4f74d06c2a01e7ab52659bfa13a2effe"
+    "sha256": "6debdc9a79bd3eda5dd67723d6e6328f3d667f5e70dca680973fd135f9d52a25"
   },
   {
     "path": "photo_sorter/image_utils.py",
@@ -1453,7 +1453,7 @@
   },
   {
     "path": "tests/test_eventphotosorter.py",
-    "sha256": "344c2328d7cd044f2109e27a95f3d1cb74531842e5c2d888c529b70ddd1d1bee"
+    "sha256": "a889dfe340ee9e57642c57ef9f69953ded38cd4b9c967e81a052f1d1ec5bbfc9"
   },
   {
     "path": "tests/test_gpu.py",
@@ -1489,7 +1489,7 @@
   },
   {
     "path": "tests/test_sorter.py",
-    "sha256": "74e8f614e2b5e9f22a66d06b9211015513e9c3cf3537285852bcc93a385c98e6"
+    "sha256": "e569156b8befb3a16f77cbde82d232a78acaec0bdd59078fd67b58c4683f71b8"
   },
   {
     "path": "tests/test_source_export.py",
