@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from .log_safety import redact_sensitive_text, safe_exception
-
 import argparse
 import os
 from pathlib import Path
@@ -9,7 +7,8 @@ from pathlib import Path
 from .app_paths import application_dir, load_app_environment, model_cache_dir
 from .completion import build_completion_report
 from .engine import PhotoSorter
-from .models import DEFAULT_API_MODEL, ProgressEvent, SorterConfig
+from .log_safety import safe_exception
+from .models import DECISIONS_CACHE_MODES, DEFAULT_API_MODEL, DEFAULT_UPLOAD_PROFILE, ProgressEvent, SorterConfig
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -23,8 +22,25 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument("--decisions-" + name, type=float, default=default)
     parser.add_argument("--save-records", action="store_true", help="処理記録CSV・集計JSON・再開用履歴を保存（標準OFF）")
     parser.add_argument("--model", default=DEFAULT_API_MODEL)
+    parser.add_argument("--upload-profile", choices=("standard", "compact"), default=DEFAULT_UPLOAD_PROFILE,
+                        help="OpenAIへの送信用JPEG（既定はcompact。従来画質との比較はstandard）")
+    parser.add_argument("--upload-limit-mbps", type=float, default=0.,
+                        help="OpenAIへの上り速度の合計上限（Mbps、0で無制限）")
+    parser.add_argument("--reuse-uploaded-references", action="store_true",
+                        help="GPT照合の参考をOpenAIに一時保存しIDを再利用（処理後に削除）")
     parser.add_argument("--decisions-gpt-fallback", action=argparse.BooleanOptionalAction, default=True,
                         help="DecisionAPIで曖昧な写真だけGPTで再判定（標準ON、追加料金あり）")
+    parser.add_argument("--decisions-cache-references", action="store_true",
+                        help="DecisionAPIの参考画像をキャッシュする試験設定")
+    parser.add_argument("--decisions-cache-mode", choices=DECISIONS_CACHE_MODES,
+                        help="DecisionAPIのキャッシュ方式（自動、参考のみ、なし）")
+    parser.add_argument("--decisions-jpeg-quality", type=int, choices=(88, 82), default=88)
+    parser.add_argument("--decisions-batch-size", type=int, choices=(1, 2, 4), default=1)
+    parser.add_argument("--decisions-local-first", action="store_true", help="明瞭な単独人物をローカルで確定する試験設定")
+    parser.add_argument("--decisions-gpu-first", action="store_true", help="CUDAで明瞭な単独人物を先に判定する試験設定")
+    parser.add_argument("--avatar-gpu", action="store_true", help="主役・部位・集合をGPUで判定する比較用の方式")
+    parser.add_argument("--avatar-direct-gpt", action="store_true", help="GPUで保留した写真を全員の参考付きでGPTに直接送る")
+    parser.add_argument("--avatar-scene-model", default="", help="構図の比較に使うローカルQwen3-VLモデルのフォルダ")
     parser.add_argument("--top-k", type=int, default=4)
     parser.add_argument("--local-confidence", type=float, default=0.78)
     parser.add_argument("--local-margin", type=float, default=0.06)
@@ -81,12 +97,14 @@ def main() -> int:
         api_key=os.getenv("OPENAI_API_KEY"),
         jev_api_key=os.getenv("JEV_API_Key"),
         model=args.model,
+        upload_profile=args.upload_profile, upload_limit_mbps=args.upload_limit_mbps,
+        reuse_uploaded_references=args.reuse_uploaded_references,
         local_top_k=args.top_k,
         local_confidence=args.local_confidence,
         local_margin=args.local_margin,
         api_concurrency=args.api_concurrency,
         api_batch_size=args.api_batch_size,
-        dry_run=args.dry_run,
+        dry_run=args.dry_run or args.avatar_gpu,
         trust_local_scene=args.trust_local_scene,
         crowd_threshold=args.crowd,
         allow_dominant_subject=not args.strict_multiple,
@@ -101,6 +119,15 @@ def main() -> int:
         quality_filter=args.quality_filter if args.mode == 'regional' else False,
         quality_api_review=args.quality_api_review,
         decisions_gpt_fallback=args.decisions_gpt_fallback,
+        decisions_cache_references=args.decisions_cache_references,
+        decisions_cache_mode=args.decisions_cache_mode,
+        decisions_jpeg_quality=args.decisions_jpeg_quality,
+        decisions_batch_size=args.decisions_batch_size,
+        decisions_local_first=args.decisions_local_first,
+        decisions_gpu_first=args.decisions_gpu_first,
+        avatar_gpu_enabled=args.avatar_gpu,
+        avatar_direct_gpt=args.avatar_direct_gpt,
+        avatar_scene_model=args.avatar_scene_model,
         **{"decisions_" + name: getattr(args, "decisions_" + name) for name in (
             "scene_probability", "confidence", "probability", "margin", "dominant_probability")},
     )
@@ -111,7 +138,9 @@ def main() -> int:
         print(safe_exception(exc))
         return 1
     report = build_completion_report(records, config.model, sorter.elapsed_seconds,
-                                     config.dry_run, config.mode, sorter.cancel_event.is_set())
+                                     config.dry_run, config.mode, sorter.cancel_event.is_set(),
+                                     stopped_reason=sorter.decisions_stop_reason, unprocessed=sorter.unprocessed_images,
+                                     decisions_run_details=sorter.decisions_run_details())
     print(report.title)
     print(report.message)
     print("\n詳細\n" + report.details)

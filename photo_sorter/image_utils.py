@@ -4,6 +4,7 @@ import base64
 import hashlib
 import io
 import shutil
+from contextlib import ExitStack
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -21,17 +22,53 @@ def resized_for_model(image: Image.Image, max_side: int) -> Image.Image:
     return result
 
 
-def image_to_data_url(path: Path, max_side: int, quality: int = 88) -> str:
+def image_to_data_url(path: Path, max_side: int, quality: int = 88, *, upload_profile="standard", reference=False) -> str:
     with open_rgb(path) as original:
-        return pil_to_data_url(original, max_side, quality)
+        return pil_to_data_url(original, max_side, quality, upload_profile=upload_profile, reference=reference)
 
 
-def pil_to_data_url(original: Image.Image, max_side: int, quality: int = 95) -> str:
-    image = resized_for_model(original, max_side)
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=quality, optimize=True)
-    image.close()
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+def _jpeg_bytes(image, quality):
+    with io.BytesIO() as buffer:
+        image.save(buffer, format="JPEG", quality=quality, optimize=True)
+        return buffer.getvalue()
+
+
+def _upload_jpeg(original, max_side, quality, upload_profile, reference):
+    if upload_profile not in {"standard", "compact"}:
+        raise ValueError("画像の転送設定はstandardまたはcompactを指定してください。")
+    with resized_for_model(original, max_side) as standard_image:
+        standard = _jpeg_bytes(standard_image, quality)
+        if upload_profile == "standard":
+            return standard
+        # 目標サイズはBase64化する前のJPEGに適用する
+        budget = (20 if reference else 100) * 1024
+        if len(standard) <= budget:
+            return standard
+        side = max(standard_image.size)
+        if reference:
+            sizes = [(384, 65), (384, 55), (320, 55)]
+            if len(standard) <= 2 * budget:
+                sizes.insert(0, (side, 65))
+        else:
+            sizes = [(1120, 72), (1120, 55), (896, 55), (768, 55)]
+        best = standard
+        steps = dict.fromkeys((min(edge, side), min(level, quality)) for edge, level in sizes)
+        with ExitStack() as resized:
+            images = {side: standard_image}
+            for edge, level in steps:
+                if edge not in images:
+                    images[edge] = resized.enter_context(resized_for_model(standard_image, edge))
+                candidate = _jpeg_bytes(images[edge], level)
+                if len(candidate) < len(best):
+                    best = candidate
+                if len(best) <= budget:
+                    break
+        return best
+
+
+def pil_to_data_url(original: Image.Image, max_side: int, quality: int = 95, *, upload_profile="standard", reference=False) -> str:
+    jpeg = _upload_jpeg(original, max_side, quality, upload_profile, reference)
+    encoded = base64.b64encode(jpeg).decode("ascii")
     return f"data:image/jpeg;base64,{encoded}"
 
 

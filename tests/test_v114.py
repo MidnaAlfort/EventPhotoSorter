@@ -150,6 +150,8 @@ class EngineTests(unittest.TestCase):
              patch('sys.argv', ['sorter','--references','specific/class','--mode','api','--dry-run']):
             constructor.return_value.run.return_value=[]
             constructor.return_value.elapsed_seconds=0
+            constructor.return_value.unprocessed_images = 0
+            constructor.return_value.decisions_stop_reason = ""
             main()
             config=constructor.call_args.args[0]
             self.assertEqual(config.reference_dir,Path('specific/class'))

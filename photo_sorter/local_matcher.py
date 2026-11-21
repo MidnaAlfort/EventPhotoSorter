@@ -20,7 +20,7 @@ class LocalMatcher:
         identities: list[ReferenceIdentity],
         model_name: str,
         cache_dir: Path,
-        *, view_provider=None, view_namespace: str = "",
+        *, view_provider=None, view_namespace: str = "", model_hub_dir: Path | None = None,
     ) -> None:
         try:
             import torch
@@ -38,7 +38,7 @@ class LocalMatcher:
         self.view_provider = view_provider
         self.view_namespace = view_namespace
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        model_cache = self.cache_dir / "hub"
+        model_cache = model_hub_dir or self.cache_dir / "hub"
         model_cache.mkdir(parents=True, exist_ok=True)
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         if self.device == 'cpu':
@@ -106,9 +106,10 @@ class LocalMatcher:
         temporary.replace(cache_path)
         return dict(grouped)
 
-    def _vectors_for_paths(self, paths: list[Path]) -> dict[Path, list[list[float]]]:
+    def _vectors_for_paths(self, paths: list[Path], *, load_image=None, create_views=None) -> dict[Path, list[list[float]]]:
         vectors_by_path: dict[Path, list[list[float]]] = {}
         views: list[Any] = []
+        borrowed = set()
         missing: list[tuple[Path, str, int, int]] = []
         for path in paths:
             try:
@@ -126,11 +127,13 @@ class LocalMatcher:
                     vectors_by_path[path] = cached
                     continue
                 start = len(views)
-                source_image = open_rgb(path)
+                source_image = open_rgb(path) if load_image is None else load_image(path)
+                if load_image is not None:
+                    borrowed.add(id(source_image))
                 if provider:
-                    proposed = provider(path, source_image)
+                    proposed = (create_views or provider)(path, source_image)
                     views.extend(proposed)
-                    if all(view is not source_image for view in proposed):
+                    if load_image is None and all(view is not source_image for view in proposed):
                         source_image.close()
                 else:
                     views.extend(make_overlapping_views(source_image))
@@ -142,19 +145,21 @@ class LocalMatcher:
                 vectors = self._embed_images(views)
             finally:
                 for view in views:
-                    view.close()
+                    if id(view) not in borrowed:
+                        view.close()
             for path, digest, start, end in missing:
                 vectors_by_path[path] = vectors[start:end]
                 self._embedding_cache.put(self._embedding_namespace, digest, vectors[start:end])
         return vectors_by_path
 
-    def rank(self, image_path: Path, top_k: int) -> list[LocalCandidate]:
-        return self.rank_many([image_path], top_k)[image_path]
+    def rank(self, image_path: Path, top_k: int, *, load_image=None) -> list[LocalCandidate]:
+        loader = None if load_image is None else lambda _: load_image()
+        return self.rank_many([image_path], top_k, load_image=loader).get(image_path, [])
 
     def _prepare_reference_matrix(self) -> None:
         """Build tensors once; the old implementation rebuilt one per identity and image."""
         torch = self.torch
-        self._reference_ids = list(self.reference_embeddings)
+        self._reference_ids = [identity for identity, vectors in self.reference_embeddings.items() if vectors]
         flat_vectors: list[list[float]] = []
         self._reference_ranges: list[tuple[int, int]] = []
         for identity_id in self._reference_ids:
@@ -167,6 +172,8 @@ class LocalMatcher:
         self,
         image_paths: list[Path],
         top_k: int,
+        *,
+        load_image=None,
     ) -> dict[Path, list[LocalCandidate]]:
         """Embed a batch of work images together and reuse one reference matrix."""
         if not image_paths:
@@ -179,33 +186,43 @@ class LocalMatcher:
         target_batch_size = 8 if self.device == "cuda" else 4
         for batch_start in range(0, len(image_paths), target_batch_size):
             batch_paths = image_paths[batch_start : batch_start + target_batch_size]
-            vectors_by_path = self._vectors_for_paths(batch_paths)
+            vectors_by_path = self._vectors_for_paths(batch_paths, load_image=load_image) if load_image is not None else self._vectors_for_paths(batch_paths)
             for image_path in batch_paths:
                 if not vectors_by_path.get(image_path):
                     continue
-                query = self.torch.tensor(vectors_by_path[image_path])
-                similarities = query @ self._reference_matrix.T
-
-                ranked: list[LocalCandidate] = []
-                for identity_id, (reference_start, reference_end) in zip(
-                    self._reference_ids,
-                    self._reference_ranges,
-                    strict=True,
-                ):
-                    score = float(similarities[:, reference_start:reference_end].max().item())
-                    ranked.append(LocalCandidate(identity_id=identity_id, score=score))
-                ranked.sort(key=lambda item: item.score, reverse=True)
-                results[image_path] = ranked[: max(1, top_k)]
+                results[image_path] = self._rank_vectors(vectors_by_path[image_path], top_k)
         return results
 
-    def rank_consensus(self, path: Path, top_k: int) -> tuple[list[LocalCandidate], bool]:
+    def _rank_vectors(self, vectors, top_k):
+        similarities = self.torch.tensor(vectors) @ self._reference_matrix.T
+        ranked = [
+            LocalCandidate(identity_id, float(similarities[:, start:end].max().item()))
+            for identity_id, (start, end) in zip(self._reference_ids, self._reference_ranges, strict=True)
+        ]
+        ranked.sort(key=lambda item: item.score, reverse=True)
+        return ranked[:max(1, top_k)]
+
+    def rank_full(self, image, top_k):
+        return self._rank_vectors(self._embed_images([image]), top_k) if self._reference_ids else []
+
+    def rank_full_many(self, images, top_k):
+        if not images or not self._reference_ids:
+            return {}
+        return {path: self._rank_vectors([vector], top_k)
+                for path, vector in zip(images, self._embed_images(list(images.values())), strict=True)}
+
+    def rank_consensus(self, path: Path, top_k: int, *, load_image=None) -> tuple[list[LocalCandidate], bool]:
         """Require the same winner for tight and padded crops; use the weakest view.
 
         Scores are similarities, never probabilities. Empty/invalid reference crops
         cannot contribute evidence. Ranking by the weakest view avoids a lucky max.
         """
-        vectors = self._vectors_for_paths([path]).get(path, [])
-        return self._rank_consensus_vectors(vectors, top_k)
+        loader = None if load_image is None else lambda _: load_image()
+        return self.rank_consensus_many([path], top_k, load_image=loader).get(path, ([], False))
+
+    def rank_consensus_many(self, paths, top_k, *, load_image=None, create_views=None):
+        prepared = self._vectors_for_paths(paths, load_image=load_image, create_views=create_views)
+        return {path: self._rank_consensus_vectors(vectors, top_k) for path, vectors in prepared.items()}
 
     def rank_box(self, path, box, top_k):
         """Local identity lookup for a foreground box returned by the count API."""

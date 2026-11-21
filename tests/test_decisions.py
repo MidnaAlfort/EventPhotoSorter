@@ -5,7 +5,9 @@ import copy
 import csv
 import json
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -17,8 +19,11 @@ from PIL import Image
 from photo_sorter.benchmark import compare
 from photo_sorter.catalog import discover_reference_catalog, file_sha256
 from photo_sorter.cli import build_parser
-from photo_sorter.decisions_verifier import DecisionsVerifier, combined_cost, estimate_decisions_cost
+from photo_sorter.decisions_verifier import (
+    DecisionsStats, DecisionsVerifier, combined_cost, decisions_cost_breakdown, estimate_decisions_cost,
+)
 from photo_sorter.engine import PhotoSorter, validate_config
+from photo_sorter.image_utils import image_to_data_url
 from photo_sorter.models import SorterConfig, VisionDecision
 from test_sorter import make_sort_tree
 
@@ -49,7 +54,7 @@ class DecisionsTests(unittest.TestCase):
         self.requests = []
         self.status = 200
         self.http = httpx.Client(transport=httpx.MockTransport(self.handle))
-        self.client = OpenAI(api_key='fake-' + 'decisions-test-key', http_client=self.http, max_retries=0)
+        self.client = OpenAI(api_key="test-decisions", http_client=self.http, max_retries=0)
         self.api = MagicMock()
         self.api.client = self.client
         self.api.verify.side_effect = lambda *a, **kw: VisionDecision(1, ["生徒/01_ねこ"], .97, False,
@@ -92,6 +97,211 @@ class DecisionsTests(unittest.TestCase):
         self.assertTrue(all(r.route == "生徒/01_ねこ" and r.api_calls == 1 for r in records))
         self.assertTrue(all(r.decision_source == "decisions" for r in records))
         self.api.verify.assert_not_called()
+
+    def test_cache_modes_change_only_cache_controls_and_keep_routes(self):
+        payloads = {}
+        for mode in ("implicit", "references", "off"):
+            with self.subTest(mode=mode):
+                self.requests.clear()
+                sorter, records = self.run_sorter(decisions_cache_mode=mode, decisions_cache_key="same-group")
+                self.assertEqual(sum(r.decisions_startup_probe for r in records), 1)
+                self.assertTrue(all(r.route == "生徒/01_ねこ" and r.decisions_usage_reported_calls == 1
+                                    and r.api_calls == 1 for r in records))
+                self.assertEqual(len(self.requests), len(records))
+                bodies = []
+                for _, body in self.requests:
+                    content = body["input"][0]["content"]
+                    markers = [p.pop("prompt_cache_breakpoint") for p in content if "prompt_cache_breakpoint" in p]
+                    self.assertEqual(markers, [{"mode": "explicit"}] if mode == "references" else [])
+                    self.assertEqual(body.pop("prompt_cache_options", None),
+                                     {"mode": "explicit"} if mode != "implicit" else None)
+                    self.assertEqual(body["prompt_cache_key"], "same-group")
+                    bodies.append(json.dumps(body, sort_keys=True))
+                payloads[mode] = sorted(bodies)
+                summary = json.loads(sorter.manifest_path.with_suffix(".summary.json").read_text(encoding="utf-8"))
+                self.assertEqual(summary["decisions_cost"]["cache_mode"], mode)
+                self.assertEqual(summary["decisions_cost"]["decisions_usage_missing_calls"], 0)
+        self.assertEqual(payloads["implicit"], payloads["references"])
+        self.assertEqual(payloads["implicit"], payloads["off"])
+
+    def test_cache_cost_breakdown_separates_charges_and_counts_unknown_attempts(self):
+        from photo_sorter.models import SortRecord
+
+        record = SortRecord("photo.png", 1, 0, "", "要確認", 1, api_calls=3,
+                            decisions_calls=2, decisions_usage_reported_calls=1,
+                            decisions_input_tokens=100_000, decisions_cached_tokens=40_000,
+                            decisions_cache_write_tokens=20_000, responses_usage_missing_calls=1,
+                            usage_incomplete=True, input_tokens=1_000, output_tokens=25)
+        costs = decisions_cost_breakdown([record], self.config.model)
+        charge_sections = ("regular_input", "cache_read", "cache_write")
+        self.assertEqual([costs[k]["tokens"] for k in charge_sections], [40_000, 40_000, 20_000])
+        self.assertAlmostEqual(sum(costs[k]["estimated_cost"]["jpy"] for k in charge_sections)
+                               + costs["responses_estimated_cost"]["jpy"],
+                               combined_cost([record], self.config.model).jpy)
+        self.assertEqual(costs["decisions_usage_missing_calls"], 1)
+        self.assertEqual(costs["responses_usage_missing_calls"], 1)
+
+    def test_explicit_cache_boundary_excludes_the_target(self):
+        sorter, records = self.run_sorter(decisions_cache_references=True, decisions_jpeg_quality=82)
+        for _, body in self.requests:
+            self.assertEqual(body["prompt_cache_options"], {"mode": "explicit"})
+            images = [part for part in body["input"][0]["content"] if part["type"] == "input_image"]
+            self.assertNotIn("prompt_cache_breakpoint", images[0])
+            self.assertEqual(images[1]["prompt_cache_breakpoint"], {"mode": "explicit"})
+            self.assertNotIn("prompt_cache_breakpoint", images[2])
+        usage = json.loads(sorter.manifest_path.with_suffix(".summary.json").read_text("utf-8"))["decisions_experiment"]
+        image_bytes = sum(len(part.get("image_url", "")) for _, body in self.requests for part in body["input"][0]["content"])
+        self.assertEqual(usage["request_image_bytes"], image_bytes)
+        self.assertTrue(all(record.decisions_prepare_seconds > 0 for record in records))
+
+    def test_cache_comparison_warms_references_with_a_different_photo(self):
+        warmup = self.root / "warmup"
+        warmup.mkdir()
+        Image.new("RGB", (32, 32), "orange").save(warmup / "prime.png")
+
+        def build(config, **options):
+            sorter = PhotoSorter(config, **options)
+            sorter.api_verifier = self.api
+            return sorter
+
+        with patch("photo_sorter.benchmark.PhotoSorter", side_effect=build):
+            report = compare(self.config, self.output / "compare", ["decisions_cached"], progress=lambda _: None,
+                             cache_pairs=True, warmup_work=warmup)
+        packets = [body for _, body in self.requests]
+        self.assertEqual(len(packets), 5)
+        keys = [body["prompt_cache_key"] for body in packets]
+        self.assertEqual(keys[:2], [keys[0]] * 2)
+        self.assertEqual(keys[2:], [keys[2]] * 3)
+        self.assertNotEqual(keys[0], keys[2])
+        target_urls = [body["input"][0]["content"][-1]["image_url"] for body in packets]
+        self.assertNotIn(target_urls[2], target_urls[:2])
+        self.assertEqual(target_urls[3:], target_urls[:2])
+        self.assertEqual(report["trials"][1]["cache_warmup"]["api_calls"], 1)
+        self.assertTrue(report["identical_warmup_verified"])
+
+    def test_batch_repairs_only_the_missing_photo_and_accounts_for_usage_once(self):
+        for index in (2, 3):
+            Image.new("RGB", (32, 32), (index * 30, 180, 20)).save(self.work / f"target_{index}.png")
+        before = {path: file_sha256(path) for path in self.work.glob("*.png")}
+
+        def handle(request):
+            result = self.handle(request)
+            packet = self.requests[-1][1]
+            if len(packet["questions"]) > 3:
+                answers = []
+                for slot, identity in (("T1", "p1"), ("T3", "p0")):
+                    for answer in response(identity=identity)["answers"]:
+                        answers.append({**answer, "name": f"{slot}_{answer['name']}"})
+                return httpx.Response(200, json={**response(), "answers": list(reversed(answers))})
+            return result
+
+        with patch.object(self.http._transport, "handle_request", side_effect=handle):
+            _, records = self.run_sorter(decisions_batch_size=4)
+        self.assertEqual([len(body["questions"]) for _, body in self.requests], [3, 9, 3])
+        by_name = {Path(record.source).name: record for record in records}
+        self.assertEqual(by_name["target_1.png"].route, "生徒/02_いぬ")
+        self.assertEqual(by_name["target_2.png"].route, "生徒/01_ねこ")
+        self.assertEqual(len({by_name[f"target_{i}.png"].api_batch_id for i in (1, 2, 3)}), 1)
+        self.assertEqual(sum(record.decisions_input_tokens for record in records), 3000)
+        self.assertEqual(sum(record.decisions_calls for record in records), 3)
+        self.assertEqual({path: file_sha256(path) for path in before}, before)
+        self.api.verify.assert_not_called()
+
+    def test_batch_rate_limit_does_not_fan_out_to_single_requests(self):
+        for index in (2, 3):
+            Image.new("RGB", (32, 32), (index * 30, 180, 20)).save(self.work / f"target_{index}.png")
+
+        def handle(request):
+            result = self.handle(request)
+            if len(self.requests[-1][1]["questions"]) > 3:
+                return httpx.Response(429, headers={"Retry-After": "30"}, json={"error": {"code": "rate_limit"}})
+            return result
+
+        with patch.object(self.http._transport, "handle_request", side_effect=handle):
+            sorter, records = self.run_sorter(expect_errors=True, decisions_batch_size=4, decisions_gpt_fallback=True)
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(sum(r.decisions_review_reason == "rate_limited" and bool(r.error) for r in records), 3)
+        self.assertEqual(sum(r.api_calls for r in records), 2)
+        self.assertEqual(sorter.decisions_stop_reason, "retry_later")
+        self.assertEqual(len(list(self.work.glob("*.png"))), 4)
+        self.api.verify.assert_not_called()
+
+    def test_local_comparison_only_accepts_one_sharp_subject_with_matching_views(self):
+        from photo_sorter.models import LocalCandidate
+        from photo_sorter.quality import QualityScreen
+        from photo_sorter.regions import RegionScene
+        from photo_sorter.regional_policy import RegionalPrepared
+
+        candidates = [LocalCandidate("生徒/01_ねこ", .96), LocalCandidate("生徒/02_いぬ", .72)]
+        scene = RegionScene([[.2, .2, .8, .8]], [.92])
+        prepared = RegionalPrepared(scene, candidates, True, True, quality=QualityScreen("sharp", ""),
+                                    full_candidates=candidates)
+        inconsistent = replace(prepared, full_candidates=list(reversed(candidates)))
+        with patch("photo_sorter.regional.RegionalMatcher") as matcher:
+            matcher.return_value.prepare.side_effect = [prepared, inconsistent]
+            _, records = self.run_sorter(decisions_local_first=True)
+        by_name = {Path(record.source).name: record for record in records}
+        self.assertEqual(by_name["target_0.png"].decision_source, "decisions_local")
+        self.assertEqual(by_name["target_1.png"].decision_source, "decisions")
+        self.assertEqual(len(self.requests), 1)
+
+    def test_adaptive_parallelism_recovers_in_two_steps_and_ignores_older_successes(self):
+        from openai import APIStatusError
+        config = replace(self.config, api_concurrency=4)
+        reference = discover_reference_catalog(self.refs)
+        request = httpx.Request("POST", "https://api.openai.com/v1/decisions")
+        error_response = httpx.Response(429, request=request, headers={"Retry-After": "2"})
+        error = APIStatusError("rate limited", response=error_response, body={})
+        for adaptive in (False, True):
+            with self.subTest(adaptive=adaptive), patch("photo_sorter.decisions_verifier.time.monotonic") as clock:
+                config = replace(config, decisions_restore_concurrency=adaptive)
+                verifier = DecisionsVerifier(self.api, config, reference)
+                clock.return_value = 10
+                old = verifier._take_slot()
+                verifier._finish_slot(verifier._take_slot(), 0, error, delay=2)
+                verifier._finish_slot(old, 0)
+                self.assertEqual(verifier.traffic_summary()["peak_inflight"], 2)
+                clock.return_value = 11
+                self.assertEqual(verifier.traffic_summary()["cooldown_seconds"], 1)
+                clock.return_value = 12
+                verifier._finish_slot(verifier._take_slot(), 1)
+                for _ in range(7):
+                    verifier._finish_slot(verifier._take_slot(), 0)
+                self.assertEqual(verifier.traffic_summary()["capacity_final"], 1)
+                verifier._finish_slot(verifier._take_slot(), 0)
+                self.assertEqual(verifier.traffic_summary()["capacity_final"], 2 if adaptive else 1)
+                for _ in range(8):
+                    verifier._finish_slot(verifier._take_slot(), 0)
+                self.assertEqual(verifier.traffic_summary()["capacity_final"], 4 if adaptive else 1)
+                self.assertEqual(verifier.traffic_summary()["cooldown_seconds"], 2)
+
+    def test_gpu_routes_clear_solo_locally_and_sends_the_other_photo(self):
+        from photo_sorter.models import LocalCandidate
+        from photo_sorter.quality import QualityScreen
+        from photo_sorter.regions import RegionScene
+        from photo_sorter.regional_policy import RegionalPrepared
+
+        ranks = [LocalCandidate("生徒/01_ねこ", .96), LocalCandidate("生徒/02_いぬ", .72)]
+        scene = RegionScene([[.2, .2, .8, .8]], [.92])
+        prepared = RegionalPrepared(scene, ranks, True, True, quality=QualityScreen("sharp", ""),
+                                    full_candidates=ranks)
+        with (patch("torch.cuda.is_available", return_value=True),
+              patch("torch.cuda.get_device_name", return_value="Mock CUDA"),
+              patch("photo_sorter.regional.RegionalMatcher") as matcher):
+            matcher.return_value.prepare_decisions_batch.return_value = {self.work / "target_0.png": prepared}
+            sorter, records = self.run_sorter(decisions_gpu_first=True, decisions_batch_size=2, save_records=False)
+        self.assertEqual({r.decision_source for r in records}, {"decisions_local", "decisions"})
+        self.assertEqual(sorter.decisions_run_details()["gpu_status"], "cuda")
+        self.assertEqual(sorter.decisions_run_details()["requests"], 1)
+        self.assertIsNone(sorter.manifest_path)
+
+    def test_missing_cuda_falls_back_without_loading_local_models(self):
+        with (patch("torch.cuda.is_available", return_value=False),
+              patch("photo_sorter.regional.RegionalMatcher") as matcher):
+            sorter, records = self.run_sorter(decisions_gpu_first=True)
+        matcher.assert_not_called()
+        self.assertEqual(sorter.decisions_run_details()["gpu_status"], "unavailable")
+        self.assertTrue(all(r.decision_source == "decisions" for r in records))
 
     def test_crowd_with_dominant_primary_goes_to_person_and_preserves_count(self):
         self.body = response(scene="crowd")
@@ -193,7 +403,7 @@ class DecisionsTests(unittest.TestCase):
         summary = json.loads(sorter.manifest_path.with_suffix(".summary.json").read_text("utf-8"))
         self.assertEqual(summary["decisions_experiment"]["input_tokens"], 2000)
         self.assertEqual(summary["usage"]["input_tokens"], 0)
-        self.assertAlmostEqual(summary["estimated_cost"]["usd"], .00012)
+        self.assertAlmostEqual(summary["estimated_cost"]["usd"], .000138)
         self.assertEqual(summary["estimated_cost_scope"], "openai_decisions")
         self.assertEqual(summary["decisions_experiment"]["gpt_fallback_images"], 0)
         with sorter.manifest_path.open(encoding="utf-8-sig", newline="") as stream:
@@ -216,6 +426,16 @@ class DecisionsTests(unittest.TestCase):
                 self.body["usage"] = usage
                 _, records = self.run_sorter()
                 self.assertTrue(all(r.usage_incomplete for r in records))
+                self.assertEqual(decisions_cost_breakdown(records, self.config.model)["decisions_usage_missing_calls"], 2)
+
+    def test_missing_gpt_usage_counts_only_the_recheck(self):
+        self.body = response(identity="unknown")
+        self.api.verify.side_effect = None
+        self.api.verify.return_value = VisionDecision(1, ["生徒/01_ねこ"], .97, False, "", usage_incomplete=True)
+        _, records = self.run_sorter(decisions_gpt_fallback=True)
+        costs = decisions_cost_breakdown(records, self.config.model)
+        self.assertEqual(costs["decisions_usage_missing_calls"], 0)
+        self.assertEqual(costs["responses_usage_missing_calls"], 2)
 
     def test_access_errors_stop_parallel_submissions_and_leave_originals_in_place(self):
         for status in (400, 401, 403, 404, 429):
@@ -239,11 +459,9 @@ class DecisionsTests(unittest.TestCase):
                 self.assertEqual(summary["stopped_reason"], f"http_{status}")
 
     def test_only_the_initial_request_is_serialized_and_later_calls_run_in_parallel(self):
-        import threading
         import time
-        from concurrent.futures import ThreadPoolExecutor
-        from photo_sorter.decisions_verifier import DecisionsStats
-        verifier = DecisionsVerifier(self.api, self.config, discover_reference_catalog(self.refs))
+        verifier = DecisionsVerifier(self.api, replace(self.config, api_concurrency=4),
+                                     discover_reference_catalog(self.refs))
         first_entered, release_first, later_pair = threading.Event(), threading.Event(), threading.Event()
         guard = threading.Lock()
         calls, active, max_active = 0, 0, 0
@@ -277,6 +495,118 @@ class DecisionsTests(unittest.TestCase):
         self.assertEqual(calls, 3)
         self.assertEqual(max_active, 2)
         self.assertTrue(all(result.matched_reference_ids == ["生徒/01_ねこ"] for result in results))
+
+    def test_single_photo_run_prepares_during_first_request_and_refills_available_workers(self):
+        for i in range(2, 6):
+            Image.new("RGB", (40, 40), (i * 20, 7, 10)).save(self.work / f"target_{i}.png")
+        progress = []
+        config = replace(self.config, api_concurrency=4)
+        sorter = PhotoSorter(config, progress=progress.append)
+        sorter.api_verifier = self.api
+
+        guard = threading.Lock()
+        encoded, sent = [], []
+        first_started, initial_queue_prepared = threading.Event(), threading.Event()
+        later_workers_started, refilled = threading.Event(), threading.Event()
+        release_first, release_second, release_remaining = (threading.Event() for _ in range(3))
+
+        def encode(path, *args, **kwargs):
+            data_url = image_to_data_url(path, *args, **kwargs)
+            if path.parent == self.work:
+                with guard:
+                    encoded.append((path, data_url))
+                    if len(encoded) == 4:
+                        initial_queue_prepared.set()
+            return data_url
+
+        def handle(request):
+            body = json.loads(request.content)
+            with guard:
+                sent.append(body["input"][0]["content"][-1]["image_url"])
+                ordinal = len(sent)
+                if ordinal == 4:
+                    later_workers_started.set()
+            if ordinal == 1:
+                first_started.set()
+                self.assertTrue(release_first.wait(8))
+            elif ordinal == 2:
+                self.assertTrue(release_second.wait(8))
+            elif ordinal in (3, 4):
+                self.assertTrue(release_remaining.wait(8))
+            else:
+                refilled.set()
+            return httpx.Response(200, json=response())
+
+        with patch("photo_sorter.decisions_verifier.image_to_data_url", side_effect=encode), \
+                patch.object(self.http._transport, "handle_request", side_effect=handle), \
+                ThreadPoolExecutor(max_workers=1) as runner:
+            run = runner.submit(sorter.run)
+            try:
+                self.assertTrue(first_started.wait(5))
+                self.assertTrue(initial_queue_prepared.wait(5))
+                with guard:
+                    self.assertEqual(len(encoded), 4)
+                    self.assertEqual(len(sent), 1)
+                release_first.set()
+                self.assertTrue(later_workers_started.wait(5))
+                release_second.set()
+                self.assertTrue(refilled.wait(5))
+            finally:
+                release_first.set()
+                release_second.set()
+                release_remaining.set()
+            records = run.result(timeout=10)
+        self.assertEqual(len(records), 6)
+        self.assertTrue(all(r.route == "生徒/01_ねこ" and r.api_calls == 1 for r in records))
+        self.assertEqual(len({path for path, _ in encoded}), 6)
+        self.assertCountEqual(sent, [data_url for _, data_url in encoded])
+        messages = [event.message for event in progress if not event.filename]
+        self.assertEqual(messages, ["DecisionAPI用の参考画像を準備中",
+                                    "最初の1枚で接続確認中", "DecisionAPIで判定中"])
+
+    def test_prefetched_image_stays_unsent_on_cancel_and_read_error_is_not_retried(self):
+        for cancelled in (False, True):
+            with self.subTest(cancelled=cancelled):
+                cancel = threading.Event()
+                config = replace(self.config, api_concurrency=2)
+                verifier = DecisionsVerifier(self.api, config, discover_reference_catalog(self.refs), cancel_event=cancel)
+                first, next_photo = self.work / "target_0.png", self.work / "target_1.png"
+                first_waiting, second_read, release = threading.Event(), threading.Event(), threading.Event()
+                self.requests.clear()
+
+                def encoder(path, *args, **kwargs):
+                    if path == next_photo and not cancelled:
+                        second_read.set()
+                        raise OSError("broken test image")
+                    data_url = image_to_data_url(path, *args, **kwargs)
+                    if path == next_photo:
+                        second_read.set()
+                    return data_url
+
+                def handler(request):
+                    first_waiting.set()
+                    self.assertTrue(release.wait(5))
+                    return self.handle(request)
+
+                with patch("photo_sorter.decisions_verifier.image_to_data_url", side_effect=encoder) as encode, \
+                        patch.object(self.http._transport, "handle_request", side_effect=handler), \
+                        ThreadPoolExecutor(max_workers=2) as pool:
+                    a, b = DecisionsStats(), DecisionsStats()
+                    first_run = pool.submit(verifier.decide, first, a)
+                    try:
+                        self.assertTrue(first_waiting.wait(5))
+                        second_run = pool.submit(verifier.decide, next_photo, b)
+                        self.assertTrue(second_read.wait(5))
+                        if cancelled:
+                            cancel.set()
+                    finally:
+                        release.set()
+                    self.assertIsNotNone(first_run.result(timeout=5))
+                    self.assertIsNone(second_run.result(timeout=5))
+                self.assertEqual(encode.call_count, 2)
+                self.assertEqual(b.decisions_review_reason, "request_cancelled" if cancelled else "image_read_failed")
+                self.assertEqual(b.decisions_calls, 0)
+                self.assertEqual(len(self.requests), 1)
 
     def test_network_failure_does_not_log_images_or_credentials(self):
         with patch.object(httpx.MockTransport, "handle_request", side_effect=httpx.ConnectError("fake-private-key/data:image/secret")) as send, \
@@ -344,19 +674,118 @@ class DecisionsTests(unittest.TestCase):
         self.assertTrue(all(not Path(r.source).exists() for r in recovered))
         self.assertTrue(all(not p.exists() for p in error_copies))
 
-    def test_long_retry_after_does_not_retry_early_or_disable_access(self):
+    def test_long_retry_after_stops_the_run_without_early_retry(self):
         def handle(request):
             return httpx.Response(429, headers={"retry-after": "60"},
                                   json={"error": {"code": "rate_limit_exceeded"}})
         with patch.object(self.http._transport, "handle_request", side_effect=handle) as send:
             sorter, records = self.run_sorter(expect_errors=True)
-        self.assertEqual(send.call_count, 2)
+        self.assertEqual(send.call_count, 1)
         self.assertTrue(all(r.api_calls == 1 and r.decisions_review_reason == "rate_limited" for r in records))
-        self.assertFalse(sorter._decisions_verifier.disabled_reason)
+        self.assertEqual(sorter.decisions_stop_reason, "retry_later")
+        self.assertEqual(sorter.unprocessed_images, 1)
+
+    def test_sustained_disconnect_stops_after_three_failed_photos_and_keeps_the_rest(self):
+        for index in range(2, 100):
+            Image.new("RGB", (32, 32), (index + 80, 180, 20)).save(self.work / f"target_{index}.png")
+        requests = []
+
+        def handle(request):
+            requests.append(request)
+            if len(requests) <= 25:
+                return httpx.Response(200, json=response())
+            raise httpx.RemoteProtocolError("private response and endpoint", request=request)
+
+        with patch.object(self.http._transport, "handle_request", side_effect=handle), \
+                patch.object(DecisionsVerifier, "_retry_delay", return_value=0):
+            sorter, records = self.run_sorter(expect_errors=True, dry_run=False, decisions_gpt_fallback=True,
+                                              max_files=100)
+        self.assertEqual(len(requests), 34)
+        self.assertEqual(sorter.decisions_stop_reason, "network_unstable")
+        self.assertEqual(sorter.unprocessed_images, 72)
+        failures = [r for r in records if r.error]
+        self.assertEqual(len(failures), 3)
+        self.assertTrue(all(r.decisions_transport_error == "protocol" for r in failures))
+        self.assertEqual(len(list(self.work.glob("*.png"))), 75)
+        self.assertNotIn("private response", str(failures))
+        self.api.verify.assert_not_called()
+
+    def test_certificate_failure_stops_without_retry_and_shows_only_a_safe_reason(self):
+        import ssl
+
+        def handle(request):
+            raise httpx.ConnectError("sensitive endpoint", request=request) from ssl.SSLCertVerificationError(
+                "sensitive certificate details")
+
+        with patch.object(self.http._transport, "handle_request", side_effect=handle) as send:
+            sorter, records = self.run_sorter(expect_errors=True)
+        self.assertEqual(send.call_count, 1)
+        self.assertEqual(sorter.decisions_stop_reason, "tls_error")
+        self.assertEqual(records[0].decisions_transport_error, "tls")
+        self.assertNotIn("sensitive", str(records))
+
+    def test_windows_transport_loads_system_roots_and_preserves_explicit_ca_overrides(self):
+        import os
+        import ssl
+        from photo_sorter.api_verifier import ApiVerifier
+
+        context = ssl.create_default_context()
+        args = ("fake-test-key", "gpt-6-luna", 1024)
+        with patch.dict(os.environ, {}, clear=True), \
+                patch("photo_sorter.api_verifier.sys.platform", "win32"), \
+                patch("photo_sorter.api_verifier.ssl.create_default_context", return_value=context) as trust, \
+                patch("photo_sorter.api_verifier.DefaultHttpxClient") as transport, \
+                patch("photo_sorter.api_verifier.OpenAI"):
+            ApiVerifier(*args)
+            trust.assert_called_once_with()
+            self.assertIs(transport.call_args.kwargs["verify"], context)
+            self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+            self.assertTrue(context.check_hostname)
+            with patch.dict(os.environ, {"SSL_CERT_FILE": "configured.pem"}):
+                ApiVerifier(*args)
+                self.assertNotIn("verify", transport.call_args.kwargs)
+            trust.assert_called_once()
+
+    def test_transient_failure_serializes_following_decisions_requests(self):
+        import threading
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        from photo_sorter.decisions_verifier import DecisionsStats
+
+        verifier = DecisionsVerifier(self.api, self.config, discover_reference_catalog(self.refs))
+        guard = threading.Lock()
+        calls = active = peak = 0
+
+        def handle(request):
+            nonlocal calls, active, peak
+            with guard:
+                calls += 1
+                first = calls == 1
+                active += 1
+                peak = max(peak, active)
+            try:
+                if first:
+                    raise httpx.ReadError("server disconnected", request=request)
+                time.sleep(.02)
+                return httpx.Response(200, json=response())
+            finally:
+                with guard:
+                    active -= 1
+
+        photo = self.work / "target_0.png"
+        with patch.object(self.http._transport, "handle_request", side_effect=handle), \
+                patch.object(DecisionsVerifier, "_retry_delay", return_value=0):
+            self.assertIsNotNone(verifier.decide(photo, DecisionsStats()))
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(lambda _: verifier.decide(photo, DecisionsStats()), range(8)))
+        self.assertTrue(all(result is not None for result in results))
+        self.assertEqual(peak, 1)
+        self.assertEqual(calls, 10)
 
     def test_cancel_during_retry_does_not_send_again(self):
         from photo_sorter.decisions_verifier import DecisionsStats
         cancel = MagicMock()
+        cancel.is_set.return_value = False
         cancel.wait.return_value = True
         verifier = DecisionsVerifier(self.api, self.config, discover_reference_catalog(self.refs), cancel_event=cancel)
         self.status = 503
@@ -399,7 +828,7 @@ class DecisionsTests(unittest.TestCase):
                 self.assertEqual(summary["decisions_experiment"]["gpt_fallback_images"], 2)
                 self.assertEqual(summary["decisions_experiment"]["review_images"], 0)
                 self.assertEqual(summary["estimated_cost_scope"], "openai_decisions_and_responses")
-                self.assertAlmostEqual(summary["estimated_cost"]["usd"], .00019)
+                self.assertAlmostEqual(summary["estimated_cost"]["usd"], .000208)
                 with sorter.manifest_path.open(encoding="utf-8-sig", newline="") as stream:
                     self.assertEqual(next(csv.DictReader(stream))["decisions_gpt_fallback"], "True")
 

@@ -1,8 +1,6 @@
 """Synchronous multi-target requests, strict ID validation and isolated fallbacks."""
 from __future__ import annotations
 
-from .log_safety import safe_exception
-
 import hashlib
 import json
 from contextlib import ExitStack
@@ -14,6 +12,7 @@ from pydantic import BaseModel
 from .api_verifier import INSTRUCTIONS, _DecisionSchema
 from .catalog import file_sha256
 from .image_utils import image_to_data_url
+from .log_safety import safe_exception
 from .models import ReferenceIdentity, VisionDecision
 
 BATCH_INSTRUCTIONS = INSTRUCTIONS.replace("For TARGET_IMAGE:", "For EACH TARGET_ID independently:") + """
@@ -76,6 +75,8 @@ def verify_many(verifier, targets: list[Path], references: list[ReferenceIdentit
     if not 1 <= len(targets) <= 4 or len(set(targets)) != len(targets):
         raise ValueError("一括判定は重複しない1～4枚を指定してください")
     references = sorted(references, key=lambda i: i.identity_id)
+    if verifier.upload_profile == "compact":
+        signature += ":upload-compact-v1"
     allowed = {i.identity_id for i in references}
     result = BatchResult()
     cache = verifier._decision_cache
@@ -113,7 +114,7 @@ def verify_many(verifier, targets: list[Path], references: list[ReferenceIdentit
         expected = {f"T{n + 1}": p for n, p in enumerate(pending)}
         for target_id, path in expected.items():
             try:
-                url = image_to_data_url(path, verifier.max_side)
+                url = image_to_data_url(path, verifier.max_side, upload_profile=verifier.upload_profile)
             except (OSError, ValueError) as exc:
                 result.errors[path] = "画像読込エラー: " + safe_exception(exc)
                 continue

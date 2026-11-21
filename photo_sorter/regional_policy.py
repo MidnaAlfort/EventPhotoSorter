@@ -1,5 +1,5 @@
 """Conservative local gates. Consistency is a heuristic, never a probability."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 
 from .regions import RegionScene
@@ -47,6 +47,7 @@ class RegionalPrepared:
     local_scene_confirmed: bool = False
     scene_gate: str = 'baseline_api_count'
     quality: object = None
+    full_candidates: list = field(default_factory=list)
     burst_anchor: object = None
     burst_descriptor: object = None
 
@@ -64,9 +65,13 @@ class RegionalViews:
         return self.detector.cache_key(path) + str(self.reference_boxes.get(path, ''))
 
     def __call__(self, path, image):
-        box = self.reference_boxes.get(path) or self.detector.detect(path).primary_box()
+        box = self.reference_boxes.get(path) or self.detector.detect(path, load_image=lambda: image).primary_box()
         if box is None:
             return []  # No background/group-photo identity exemplars.
+        return self.crop(image, box)
+
+    @staticmethod
+    def crop(image, box):
         width, height = image.size
         result = []
         for padding in (0., .06):

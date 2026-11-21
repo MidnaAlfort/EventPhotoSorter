@@ -10,6 +10,35 @@ def record(route="生徒/ねこ", **values):
 
 class CompletionTests(unittest.TestCase):
 
+    def test_decisions_timings_are_labelled_as_worker_totals(self):
+        photos = [record(decisions_prepare_seconds=.25, decisions_seconds=2.25)] * 4
+        report = build_completion_report(photos, "gpt-6-luna", 3, True, "decisions")
+        self.assertIn("所要時間：3秒", report.message)
+        self.assertIn("処理時間（並列分の合計）", report.details)
+        self.assertIn("対象写真のJPEG準備：1.00秒", report.details)
+        self.assertIn("送信・応答待ち：9.00秒", report.details)
+
+    def test_decisions_fee_detail_includes_cache_and_unconfirmed_usage(self):
+        photo = record(api_calls=3, decisions_calls=2, decisions_usage_reported_calls=1,
+                       decisions_input_tokens=100_000, decisions_cached_tokens=40_000,
+                       decisions_cache_write_tokens=20_000, responses_usage_missing_calls=1,
+                       usage_incomplete=True, input_tokens=1000)
+        report = build_completion_report([photo], "gpt-6-luna", 1, True, "decisions")
+        self.assertIn("DecisionAPIの通常入力：40,000 tokens、0.60円", report.details)
+        self.assertIn("キャッシュ読込：40,000 tokens、0.06円", report.details)
+        self.assertIn("キャッシュ書込：20,000 tokens、0.38円", report.details)
+        self.assertIn("利用量未確認：DecisionAPI 1件、GPT 1件", report.details)
+
+    def test_reports_temporary_reference_upload_and_cleanup_time(self):
+        uploads = {"upload_count": 21, "reused_count": 609, "deleted_count": 21, "upload_bytes": 262144,
+                   "upload_seconds": 12.5, "cleanup_seconds": 1.25, "inline_fallback_count": 0, "delete_failures": 0}
+        report = build_completion_report([record()], "gpt-6-luna", 76, True, "decisions",
+                                         decisions_run_details={"reference_uploads": uploads})
+        self.assertIn("GPT用参考の一時保存：21件、IDの再利用：609回、削除完了：21件", report.details)
+        self.assertIn("一時送信用の参考JPEG：0.25 MiB", report.details)
+        self.assertIn("一時アップロード待ち：12.50秒", report.details)
+        self.assertIn("終了時の削除待ち：1.25秒", report.details)
+
     def test_gpt_rescue_fee_is_included_once_and_details_show_recovered_images(self):
         sample = record(decisions_gpt_fallback=True, decision_source="decisions_gpt",
                         decisions_review_reason="unknown_identity", api_calls=2, decisions_calls=1,
@@ -111,6 +140,16 @@ class CompletionTests(unittest.TestCase):
     def test_cancelled_run_is_not_announced_as_completed(self):
         report = build_completion_report([], "", 0, False, "regional", True)
         self.assertEqual(report.title, "処理を停止しました")
+
+    def test_reports_network_stop_and_unprocessed_photos(self):
+        failure = record("エラー", error="test", decisions_review_reason="request_failed",
+                         decisions_transport_error="protocol", api_calls=3, usage_incomplete=True)
+        report = build_completion_report([failure], "gpt-6-luna", 10, False, "decisions",
+                                         stopped_reason="network_unstable", unprocessed=75)
+        self.assertEqual(report.title, "DecisionAPIを停止しました")
+        self.assertIn("未処理：75枚", report.message)
+        self.assertIn("通信が連続して失敗", report.message)
+        self.assertIn("通信の途中切断またはプロトコルエラー：1枚", report.details)
         self.assertIn("未処理", report.message)
 
 

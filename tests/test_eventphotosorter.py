@@ -28,7 +28,7 @@ class RecordingTests(unittest.TestCase):
                 sorter.api_verifier.verify.return_value = VisionDecision(1, [identity], .99, False, "solo")
                 records = sorter.run()
                 self.assertEqual(records[0].route, identity)
-                self.assertEqual(records[0].app_version, "1.10")
+                self.assertEqual(records[0].app_version, APP_VERSION)
                 self.assertFalse((work / "target_0.png").exists())
                 self.assertTrue(Path(records[0].destination).is_file())
                 self.assertEqual((output / "処理記録").exists(), enabled)
@@ -37,7 +37,7 @@ class RecordingTests(unittest.TestCase):
                 if enabled:
                     summary = sorter.manifest_path.with_suffix(".summary.json").read_text(encoding="utf-8")
                     self.assertNotIn("test-secret", summary)
-                    self.assertEqual(json.loads(summary)["app_version"], "1.10")
+                    self.assertEqual(json.loads(summary)["app_version"], APP_VERSION)
                 else:
                     self.assertIsNone(sorter.manifest_path)
 
@@ -104,6 +104,28 @@ class SettingsTests(unittest.TestCase):
         self.temporary.cleanup()
 
 
+
+    def test_compact_upload_ignores_old_preference_and_keeps_other_network_settings(self):
+        self.assertEqual(self.app._build_config().upload_profile, "compact")
+        self.app.upload_limit_var.set("0.5")
+        self.app.upload_files_var.set(True)
+        self.app._save_preferences()
+        settings = self.root / "アプリデータ/settings.json"
+        saved = json.loads(settings.read_text(encoding="utf-8"))
+        settings.write_text(json.dumps({**saved, "compact_upload": False}), encoding="utf-8")
+        self.app.upload_limit_var.set("無制限")
+        self.app.upload_files_var.set(False)
+        self.app._load_preferences()
+        self.app.settings_tabs.select(self.app.simple_settings)
+        simple = self.app._build_config()
+        self.assertEqual((simple.upload_profile, simple.upload_limit_mbps), ("compact", .5))
+        self.assertFalse(simple.reuse_uploaded_references)
+        self.app.settings_tabs.select(self.app.detailed_settings)
+        detailed = self.app._build_config()
+        self.assertEqual((detailed.upload_profile, detailed.upload_limit_mbps), ("compact", .5))
+        self.assertTrue(detailed.reuse_uploaded_references)
+        self.app._save_preferences()
+        self.assertNotIn("compact_upload", json.loads(settings.read_text(encoding="utf-8")))
 
     def test_simple_defaults_enable_gpt_rescue_while_details_can_disable_it(self):
         self.app.simple_mode_var.set("DecisionAPI画像判定（おすすめ）")
@@ -281,6 +303,8 @@ class SettingsTests(unittest.TestCase):
         self.assertIn("人物領域ハイブリッド", self.app.simple_mode_description.get())
         self.assertEqual(build_parser().parse_args([]).mode, "local")
         self.assertFalse(build_parser().parse_args([]).save_records)
+        self.assertEqual(build_parser().parse_args([]).upload_profile, "compact")
+        self.assertEqual(build_parser().parse_args(["--upload-profile", "standard"]).upload_profile, "standard")
 
     def test_simple_decisions_uses_defaults_and_survives_tab_switching(self):
         self.app.decisions_settings_vars["decisions_margin"].set("nan")
@@ -302,6 +326,19 @@ class SettingsTests(unittest.TestCase):
         self.app.settings_tabs.select(self.app.simple_settings)
         self.app.update()
         self.assertEqual(self.app._build_config().mode, "decisions")
+
+    def test_decisions_trial_profile_is_persisted_for_details_only(self):
+        self.select_details()
+        self.app.decisions_profile_var.set("2枚一括（試験）")
+        self.assertEqual(self.app._build_config().decisions_batch_size, 2)
+        self.app._save_preferences()
+        self.app._reset_decisions_settings()
+        self.assertEqual(self.app._build_config().decisions_batch_size, 1)
+        self.app._load_preferences()
+        self.assertEqual(self.app._build_config().decisions_batch_size, 2)
+        self.app.settings_tabs.select(self.app.simple_settings)
+        self.app.update()
+        self.assertEqual(self.app._build_config().decisions_batch_size, 1)
 
     def test_saved_legacy_decisions_selection_is_migrated_with_gpt_rescue(self):
         path = self.root / "アプリデータ/settings.json"

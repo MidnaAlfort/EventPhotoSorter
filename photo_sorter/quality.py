@@ -4,6 +4,7 @@ Fixed scores are heuristics, not calibrated blur probabilities. They nominate
 suspects, so flat avatar textures must never be rejected on these scores alone.
 """
 from dataclasses import dataclass, field
+from contextlib import nullcontext
 
 import numpy as np
 from PIL import Image
@@ -48,14 +49,14 @@ def focus_metrics(image):
     return measurements
 
 
-def assess_quality(path, scene):
+def assess_quality(path, scene, *, load_image=None):
     if not scene.boxes:
         return QualityScreen('review', '人物領域を検出できず、主役のピントを確認できません')
     area = lambda b: (b[2]-b[0])*(b[3]-b[1])
     primary = scene.primary_box()
     boxes = [primary] if primary is not None else [b for b in scene.boxes if area(b) >= max(map(area, scene.boxes)) * .30]
     metrics, review_boxes = [], []
-    with open_rgb(path) as image:
+    with (nullcontext(load_image()) if load_image is not None else open_rgb(path)) as image:
         width, height = image.size
         for box in boxes:
             x0, y0, x1, y1 = box

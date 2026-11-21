@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv, set_key
 
 APP_NAME = "MidnaUdon EventPhotoSorter"
-APP_VERSION = "1.10"
+APP_VERSION = "1.20"
 EXECUTABLE_NAME = "MidnaUdon EventPhotoSorter"
 
 

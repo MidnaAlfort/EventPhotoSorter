@@ -11,6 +11,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from photo_sorter.app_paths import APP_VERSION
 from tools.release_policy import sha256, verify_executable
 
 DOCUMENTS = ("docs/Readme.txt", "LICENSE", "THIRD_PARTY_NOTICES.md", "ASSET_NOTICE.md", "RUNTIME_TERMS.txt")
@@ -119,7 +120,9 @@ def export_release(root, output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "公開用" / ("EventPhotoSorter-v1_10-Windows-" + datetime.now().strftime("%Y%m%d-%H%M%S")))
+    version = APP_VERSION.replace(".", "_")
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    parser.add_argument("--output", type=Path, default=ROOT / "公開用" / f"EventPhotoSorter-v{version}-Windows-{stamp}")
     folder, archive = export_release(ROOT, parser.parse_args().output)
     print(folder)
     print(archive)

@@ -7,24 +7,19 @@
       "sha256": "1836cfb7eb2fa71d9f56249a1b7ad86b7b69254f475c16f41e063aaa4ea05809"
     },
     {
-      "file": "torch/lib/c10.dll",
-      "source": "python-environment/Lib/site-packages/torch/lib/c10.dll",
-      "sha256": "f7a31f005bf90149972a93049224a7ea780f289bfd54ff2f3009c4015b47409a"
+      "file": "torch/lib/libiomp5md.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/libiomp5md.dll",
+      "sha256": "ee527c978999653eb18edc3ef372b4e95d4ad9a7691b6d08817be9d38c7d0a02"
     },
     {
-      "file": "torch/lib/torch.dll",
-      "source": "python-environment/Lib/site-packages/torch/lib/torch.dll",
-      "sha256": "8a6cf8bbf54cb7653c8140b524de673e7785e16053df53921da04845e995c9db"
+      "file": "torch/bin/protoc.exe",
+      "source": "python-environment/Lib/site-packages/torch/bin/protoc.exe",
+      "sha256": "6f81a40f30cf6aceb906855fa943df86f842eaba211413a13a5e88564fc338ff"
     },
     {
       "file": "torch/lib/uv.dll",
       "source": "python-environment/Lib/site-packages/torch/lib/uv.dll",
       "sha256": "fa569e682fc5fb7a8eb94c6829af9f30a569748dbbc6bce39735d48bc960bcf8"
-    },
-    {
-      "file": "torch/lib/libiomp5md.dll",
-      "source": "python-environment/Lib/site-packages/torch/lib/libiomp5md.dll",
-      "sha256": "ee527c978999653eb18edc3ef372b4e95d4ad9a7691b6d08817be9d38c7d0a02"
     },
     {
       "file": "torch/lib/torch_cpu.dll",
@@ -37,14 +32,19 @@
       "sha256": "99c9b6ccfa750e7f5281347ddc1468544b3ce5f92851a0236713b1614505333a"
     },
     {
+      "file": "torch/lib/torch.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/torch.dll",
+      "sha256": "8a6cf8bbf54cb7653c8140b524de673e7785e16053df53921da04845e995c9db"
+    },
+    {
       "file": "torch/lib/torch_global_deps.dll",
       "source": "python-environment/Lib/site-packages/torch/lib/torch_global_deps.dll",
       "sha256": "b56491e5719a8d17e4ce0da11cfc0cf2ab02af5be2568126aef52e9970b3aa8e"
     },
     {
-      "file": "torch/bin/protoc.exe",
-      "source": "python-environment/Lib/site-packages/torch/bin/protoc.exe",
-      "sha256": "6f81a40f30cf6aceb906855fa943df86f842eaba211413a13a5e88564fc338ff"
+      "file": "torch/lib/c10.dll",
+      "source": "python-environment/Lib/site-packages/torch/lib/c10.dll",
+      "sha256": "f7a31f005bf90149972a93049224a7ea780f289bfd54ff2f3009c4015b47409a"
     },
     {
       "file": "torch/lib/libiompstubs5md.dll",
@@ -57,14 +57,14 @@
       "sha256": "93488fa7e631cc0a2bd808b9eee8617280ee9b6ff499ab424a1a1cbf24d77dc7"
     },
     {
-      "file": "numpy.libs/libscipy_openblas64_-327b2e0bcffce2882e0dc04cdeb4eaa6.dll",
-      "source": "python-environment/Lib/site-packages/numpy.libs/libscipy_openblas64_-327b2e0bcffce2882e0dc04cdeb4eaa6.dll",
-      "sha256": "327b2e0bcffce2882e0dc04cdeb4eaa6382ed4dba29871b6176fa157782f484a"
-    },
-    {
       "file": "numpy.libs/msvcp140-a4c2229bdc2a2a630acdc095b4d86008.dll",
       "source": "Visual Studio 2022/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll",
       "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
+    },
+    {
+      "file": "numpy.libs/libscipy_openblas64_-327b2e0bcffce2882e0dc04cdeb4eaa6.dll",
+      "source": "python-environment/Lib/site-packages/numpy.libs/libscipy_openblas64_-327b2e0bcffce2882e0dc04cdeb4eaa6.dll",
+      "sha256": "327b2e0bcffce2882e0dc04cdeb4eaa6382ed4dba29871b6176fa157782f484a"
     },
     {
       "file": "vcruntime140_1.dll",
@@ -72,14 +72,14 @@
       "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
     },
     {
-      "file": "msvcp140.dll",
-      "source": "Visual Studio 2022/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll",
-      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
-    },
-    {
       "file": "vcruntime140.dll",
       "source": "Visual Studio 2022/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140.dll",
       "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+    },
+    {
+      "file": "msvcp140.dll",
+      "source": "Visual Studio 2022/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll",
+      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
     },
     {
       "file": "_lzma.pyd",
@@ -362,16 +362,6 @@
       "sha256": "d52baca085f88b40f30c855e6c55791e5375c80f60f94057061e77e33f4cad7a"
     },
     {
-      "file": "torchvision/libwebp.dll",
-      "source": "python-environment/Lib/site-packages/torchvision/libwebp.dll",
-      "sha256": "e9ebf8ca707ad2e964f8cdd9892c9e536517856696547c4671f62a7cd4d394f6"
-    },
-    {
-      "file": "torchvision/python312.dll",
-      "source": "python-environment/Lib/site-packages/torchvision/python312.dll",
-      "sha256": "72c1bea78e0c49f746889a3af8c4973e044e50e319c1c976dd98059a403404da"
-    },
-    {
       "file": "torchvision/jpeg8.dll",
       "source": "python-environment/Lib/site-packages/torchvision/jpeg8.dll",
       "sha256": "e7c16e1e0330d747aec1cd161f6d54816f71e4172c14f41f76d5a2b2191c93a3"
@@ -382,14 +372,19 @@
       "sha256": "5befe1f2a614da8049da94ef252a9300d1bc75a9b2468750cdbe817f9c60d237"
     },
     {
+      "file": "torchvision/libwebp.dll",
+      "source": "python-environment/Lib/site-packages/torchvision/libwebp.dll",
+      "sha256": "e9ebf8ca707ad2e964f8cdd9892c9e536517856696547c4671f62a7cd4d394f6"
+    },
+    {
+      "file": "torchvision/python312.dll",
+      "source": "python-environment/Lib/site-packages/torchvision/python312.dll",
+      "sha256": "72c1bea78e0c49f746889a3af8c4973e044e50e319c1c976dd98059a403404da"
+    },
+    {
       "file": "sqlite3.dll",
       "source": "python-runtime/DLLs/sqlite3.dll",
       "sha256": "2f9c9940e87840ff1b5c4922d8b73c7302d1b12badc860990dfebdf77b4140ee"
-    },
-    {
-      "file": "tk86t.dll",
-      "source": "python-runtime/DLLs/tk86t.dll",
-      "sha256": "f44fa94865d17e4f0266c8f9a1dd89825d8a0c6c3a63cf4192fc08c8796acabf"
     },
     {
       "file": "tcl86t.dll",
@@ -397,14 +392,19 @@
       "sha256": "22a1746363151a19e02f92f9b7bc4849038783be34c04f311a11df69fdc1a039"
     },
     {
-      "file": "torchvision/libsharpyuv.dll",
-      "source": "python-environment/Lib/site-packages/torchvision/libsharpyuv.dll",
-      "sha256": "5b9781467bae1b30a5df0707ab745730c98ad96a1db2a825b8f135f3cd6cf946"
+      "file": "tk86t.dll",
+      "source": "python-runtime/DLLs/tk86t.dll",
+      "sha256": "f44fa94865d17e4f0266c8f9a1dd89825d8a0c6c3a63cf4192fc08c8796acabf"
     },
     {
       "file": "torchvision/zlib.dll",
       "source": "python-environment/Lib/site-packages/torchvision/zlib.dll",
       "sha256": "a2e123cc624634d08200b4e5ee6a2828d2df88fd9573b5b5fdd9da336f5738a6"
+    },
+    {
+      "file": "torchvision/libsharpyuv.dll",
+      "source": "python-environment/Lib/site-packages/torchvision/libsharpyuv.dll",
+      "sha256": "5b9781467bae1b30a5df0707ab745730c98ad96a1db2a825b8f135f3cd6cf946"
     },
     {
       "file": "zlib1.dll",
@@ -413,5 +413,5 @@
     }
   ],
   "excluded_system_libraries": [],
-  "executable_sha256": "dd837c63eb7b805094919579659582877aa18eb027d926a757d1c510be25c4f7"
+  "executable_sha256": "1c42a551198ef10a0c402e974bf889611280cef1d514802bb5067ba438b3d171"
 }

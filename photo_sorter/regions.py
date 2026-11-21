@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import math
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -100,8 +101,10 @@ def suppress_overlaps(boxes, scores, threshold=.55):
 
 
 class RegionDetector:
-    def __init__(self, cache_dir: Path, model_name="IDEA-Research/grounding-dino-tiny", *, shortest_edge=640, longest_edge=960):
+    def __init__(self, cache_dir: Path, model_name="IDEA-Research/grounding-dino-tiny", *, shortest_edge=640, longest_edge=960,
+                 model_hub_dir=None):
         self.cache_dir = cache_dir
+        self.model_hub_dir = model_hub_dir or cache_dir / "hub"
         self.model_name = model_name
         self.shortest_edge, self.longest_edge = shortest_edge, longest_edge
         self.revision = DETECTOR_REVISION if model_name == "IDEA-Research/grounding-dino-tiny" else None
@@ -114,15 +117,19 @@ class RegionDetector:
         from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
         self.torch = torch
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        cache = self.cache_dir / "hub"
+        cache = self.model_hub_dir
         self.processor = AutoProcessor.from_pretrained(self.model_name, revision=self.revision, cache_dir=cache)
         self.model = AutoModelForZeroShotObjectDetection.from_pretrained(
             self.model_name, revision=self.revision, cache_dir=cache, use_safetensors=True).to(self.device).eval()
 
-    def detect(self, path: Path) -> RegionScene:
+    def detect(self, path: Path, *, load_image=None) -> RegionScene:
+        loader = None if load_image is None else lambda _: load_image()
+        return self.detect_many([path], load_image=loader)[path]
+
+    def _cached_scene(self, path):
         reviewed = read_reviewed_regions(path)
         if reviewed is not None:
-            return reviewed
+            return None, reviewed
         key = file_sha256(path)
         cached = self.cache.get(self.namespace, key)
         try:
@@ -131,51 +138,69 @@ class RegionDetector:
                 validate_boxes(scene.boxes)
                 if len(scene.scores) == len(scene.boxes) and all(isinstance(s, (int, float)) and 0 <= s <= 1 for s in scene.scores):
                     scene.reviewed = False
-                    return scene
+                    return key, scene
         except (TypeError, ValueError):
             pass
+        return key, None
+
+    def detect_many(self, paths, *, load_image=None):
+        scenes, pending = {}, {}
+        for path in paths:
+            key, scene = self._cached_scene(path)
+            if scene is None:
+                pending[path] = key
+            else:
+                scenes[path] = scene
+        if not pending:
+            return scenes
+        with ExitStack() as stack:
+            images = [load_image(path) if load_image is not None else stack.enter_context(open_rgb(path))
+                      for path in pending]
+            for (path, key), scene in zip(pending.items(), self.predict(images), strict=True):
+                self.cache.put(self.namespace, key, asdict(scene))
+                scenes[path] = scene
+        return scenes
+
+    def predict(self, images, *, size=None):
+        """指定した解像度でメモリ内の画像を検出する"""
+        if not images:
+            return []
         if self.model is None:
             self._load()
-        image = open_rgb(path)
-        try:
-            inputs = self.processor(images=image, text=AVATAR_PROMPT, return_tensors="pt",
-                                    size={"shortest_edge": self.shortest_edge, "longest_edge": self.longest_edge}).to(self.device)
-            with self.torch.inference_mode():
-                outputs = self.model(**inputs)
-            method = self.processor.post_process_grounded_object_detection
-            key_name = "threshold" if "threshold" in inspect.signature(method).parameters else "box_threshold"
-            result = method(outputs, inputs.input_ids, **{key_name: .25}, text_threshold=.20,
-                            target_sizes=[image.size[::-1]])[0]
-            width, height = image.size
-            boxes = [[max(0., min(1., float(v) / (width if i % 2 == 0 else height)))
-                      for i, v in enumerate(b)] for b in result["boxes"].cpu().tolist()]
-            scores = result["scores"].cpu().tolist()
-            valid = [(b, s) for b, s in zip(boxes, scores) if b[0] < b[2] and b[1] < b[3]]
-            boxes, scores = suppress_overlaps([b for b, _ in valid], [s for _, s in valid])
-            # Multi-label queries can return both a body and its contained head.
-            # Keep the outer crop. This is only a proposal; the default route still
-            # obtains a count from the original image through the API.
-            retained = []
-            for i, b in enumerate(boxes):
-                area = (b[2]-b[0])*(b[3]-b[1])
-                contained = False
-                for j, outer in enumerate(boxes):
-                    if i == j:
-                        continue
-                    outer_area = (outer[2]-outer[0])*(outer[3]-outer[1])
-                    inter = max(0,min(b[2],outer[2])-max(b[0],outer[0]))*max(0,min(b[3],outer[3])-max(b[1],outer[1]))
-                    if (outer_area > area*1.8 and inter/area > .95 and
+        shortest, longest = size or (self.shortest_edge, self.longest_edge)
+        inputs = self.processor(images=images, text=[AVATAR_PROMPT] * len(images), return_tensors="pt",
+                                size={"shortest_edge": shortest, "longest_edge": longest}).to(self.device)
+        with self.torch.inference_mode():
+            outputs = self.model(**inputs)
+        method = self.processor.post_process_grounded_object_detection
+        key_name = "threshold" if "threshold" in inspect.signature(method).parameters else "box_threshold"
+        results = method(outputs, inputs.input_ids, **{key_name: .25}, text_threshold=.20,
+                         target_sizes=[image.size[::-1] for image in images])
+        return [self._to_scene(image.size, result) for image, result in zip(images, results, strict=True)]
+
+    @staticmethod
+    def _to_scene(size, result):
+        width, height = size
+        boxes = [[max(0., min(1., float(v) / (width if i % 2 == 0 else height)))
+                  for i, v in enumerate(b)] for b in result["boxes"].cpu().tolist()]
+        scores = result["scores"].cpu().tolist()
+        valid = [(b, s) for b, s in zip(boxes, scores) if b[0] < b[2] and b[1] < b[3]]
+        boxes, scores = suppress_overlaps([b for b, _ in valid], [s for _, s in valid])
+        # 人物全体とその内側の頭部が検出された場合は外側の領域を使う
+        retained = []
+        for i, b in enumerate(boxes):
+            area = (b[2]-b[0])*(b[3]-b[1])
+            for j, outer in enumerate(boxes):
+                if i == j:
+                    continue
+                outer_area = (outer[2]-outer[0])*(outer[3]-outer[1])
+                inter = max(0, min(b[2], outer[2])-max(b[0], outer[0])) * max(0, min(b[3], outer[3])-max(b[1], outer[1]))
+                if (outer_area > area*1.8 and inter/area > .95 and
                         abs((b[0]+b[2]-outer[0]-outer[2])/2) < (outer[2]-outer[0])*.15):
-                        contained = True
-                        break
-                if not contained:
-                    retained.append(i)
-            boxes, scores = [boxes[i] for i in retained], [scores[i] for i in retained]
-            scene = RegionScene(boxes, scores)
-            self.cache.put(self.namespace, key, asdict(scene))
-            return scene
-        finally:
-            image.close()
+                    break
+            else:
+                retained.append(i)
+        return RegionScene([boxes[i] for i in retained], [scores[i] for i in retained])
 
     def cache_key(self, path):
         try:
@@ -185,7 +210,7 @@ class RegionDetector:
         return hashlib.sha256(self.namespace.encode() + annotation).hexdigest()
 
     def __call__(self, path, image):
-        box = self.detect(path).primary_box()
+        box = self.detect(path, load_image=lambda: image).primary_box()
         if box is None:
             return [image]
         width, height = image.size

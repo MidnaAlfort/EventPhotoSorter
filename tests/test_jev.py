@@ -47,7 +47,7 @@ class JevTests(unittest.TestCase):
         self.identities = discover_reference_catalog(self.refs)
         self.identity = self.identities[0].identity_id
         self.config = SorterConfig(self.work, self.refs, self.out, mode="jev",
-            api_key='opena' + 'i-test-secret', jev_api_key="jev-test-secret", dry_run=True,
+            api_key="openai-test", jev_api_key="jev-test-secret", dry_run=True,
             save_records=True, cache_dir=self.root / "cache")
         self.api = MagicMock()
         self.api._speed_options.return_value = {}
@@ -176,11 +176,11 @@ class JevTests(unittest.TestCase):
             result, stats = self.decide()
         self.assertIsNone(result)
         self.assertEqual(stats.jev_fallback_reason, "jev_request_or_response_failed")
-        self.api.client.responses.parse.side_effect = RuntimeError("openai-test-secret")
+        self.api.client.responses.parse.side_effect = RuntimeError("openai-test")
         result, stats = self.decide()
         self.assertIsNone(result)
         self.assertEqual(stats.jev_fallback_reason, "feature_extraction_failed")
-        self.assertNotIn("openai-test-secret", str(stats.record_fields()))
+        self.assertNotIn("openai-test", str(stats.record_fields()))
 
     def test_accepted_result_moves_only_when_requested(self):
         self.config.dry_run = False
@@ -221,7 +221,7 @@ class JevTests(unittest.TestCase):
         self.assertEqual(len(list(self.work.glob("*.png"))), 2)
         summary_text = sorter.manifest_path.with_suffix(".summary.json").read_text("utf-8")
         self.assertNotIn("jev-test-secret", summary_text)
-        self.assertNotIn("openai-test-secret", summary_text)
+        self.assertNotIn("openai-test", summary_text)
         summary = json.loads(summary_text)
         self.assertEqual(summary["jev_experiment"]["accepted_images"], 2)
         self.assertEqual(summary["estimated_cost_scope"], "openai_only_excludes_jev")
@@ -268,7 +268,7 @@ class JevTests(unittest.TestCase):
             validate_config(replace(self.config, jev_api_key=" "))
         with patch.dict(os.environ, {}, clear=True):
             (self.root / ".env").write_text("JEV_API_Key=jev-test-secret\n", encoding="utf-8")
-            save_api_key(self.root, "openai-test-secret")
+            save_api_key(self.root, "openai-test")
             load_app_environment(self.root)
             self.assertEqual(os.environ["JEV_API_Key"], "jev-test-secret")
 

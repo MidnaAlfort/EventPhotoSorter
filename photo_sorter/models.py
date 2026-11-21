@@ -8,6 +8,9 @@ from .app_paths import APP_VERSION
 
 
 DEFAULT_API_MODEL = "gpt-6-luna"
+DEFAULT_UPLOAD_PROFILE = "compact"
+DEFAULT_DECISIONS_CACHE_MODE = "implicit"
+DECISIONS_CACHE_MODES = ("implicit", "references", "off")
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 SortMode = Literal["hybrid", "api", "local", "regional", "jev", "decisions"]
@@ -48,6 +51,7 @@ class SorterConfig:
     allow_dominant_subject: bool = True
     dominant_subject_confidence: float = 0.85
     cache_dir: Path | None = None
+    model_hub_dir: Path | None = None
     resume: bool = False
     retry_full_catalog: bool = True
     reuse_api_results: bool = False  # Legacy input only; work-photo API results are never persisted.
@@ -75,6 +79,32 @@ class SorterConfig:
     decisions_probability: float = 0.75
     decisions_margin: float = 0.20
     decisions_dominant_probability: float = 0.85
+    decisions_cache_references: bool = False
+    decisions_cache_key: str | None = None
+    decisions_jpeg_quality: int = 88
+    decisions_batch_size: int = 1
+    decisions_local_first: bool = False
+    decisions_gpu_first: bool = False
+    decisions_restore_concurrency: bool = True
+    local_batch_size: int = 4
+    avatar_gpu_enabled: bool = False
+    avatar_direct_gpt: bool = False
+    avatar_scene_model: str = ""
+    upload_profile: str = DEFAULT_UPLOAD_PROFILE
+    upload_limit_mbps: float = 0.
+    reuse_uploaded_references: bool = False
+    decisions_cache_mode: str | None = None
+
+    @property
+    def effective_decisions_cache_mode(self) -> str:
+        if self.decisions_cache_mode is not None:
+            return self.decisions_cache_mode
+        return "references" if self.decisions_cache_references else DEFAULT_DECISIONS_CACHE_MODE
+
+    @property
+    def uses_single_photo_decisions(self) -> bool:
+        return (self.mode == "decisions" and self.decisions_batch_size == 1
+                and not (self.decisions_local_first or self.decisions_gpu_first or self.avatar_gpu_enabled))
 
     def normalized(self) -> "SorterConfig":
         self.reuse_api_results = False
@@ -83,6 +113,8 @@ class SorterConfig:
         self.output_dir = self.output_dir.expanduser().resolve()
         if self.cache_dir is not None:
             self.cache_dir = self.cache_dir.expanduser().resolve()
+        if self.model_hub_dir is not None:
+            self.model_hub_dir = self.model_hub_dir.expanduser().resolve()
         if self.api_key:
             self.api_key = self.api_key.strip()
         if self.jev_api_key:
@@ -105,6 +137,7 @@ class VisionDecision:
     cache_write_input_tokens: int = 0
     output_tokens: int = 0
     api_cache_hit: bool = False
+    usage_incomplete: bool = False
 
 
 @dataclass
@@ -150,6 +183,7 @@ class SortRecord:
     local_gate: str = ""
     elapsed_seconds: float = 0.0
     api_seconds: float = 0.0
+    api_request_bytes: int = 0
     api_cache_hits: int = 0
     api_batch_id: str = ""
     api_batch_size: int = 1
@@ -184,6 +218,11 @@ class SortRecord:
     decisions_gpt_fallback: bool = False
     decisions_calls: int = 0
     decisions_seconds: float = 0.0
+    decisions_prepare_seconds: float = 0.0
+    decisions_startup_probe: bool = False
+    decisions_usage_reported_calls: int = 0
+    responses_usage_missing_calls: int = 0
+    decisions_image_bytes: int = 0
     decisions_input_tokens: int = 0
     decisions_cached_tokens: int = 0
     decisions_cache_write_tokens: int = 0
@@ -195,6 +234,10 @@ class SortRecord:
     decisions_dominant_probability: float = 0.0
     decisions_model: str = ""
     decisions_review_reason: str = ""
+    decisions_transport_error: str = ""
+    decisions_request_id: str = ""
+    decisions_reference_image_bytes: int = 0
+    decisions_target_image_bytes: int = 0
 
     def to_dict(self) -> dict[str, object]:
         from .log_safety import redact_structure

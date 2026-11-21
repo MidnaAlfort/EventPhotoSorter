@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from .log_safety import redact_sensitive_text, register_secrets, safe_exception
-
 import os
 import json
 import sys
@@ -18,6 +16,7 @@ from .reference_learning import add_confirmed_reference
 from .completion import CompletionReport, build_completion_report
 from .engine import PhotoSorter, validate_config
 from .formatting import format_elapsed_time
+from .log_safety import redact_sensitive_text, register_secrets, safe_exception
 from .models import DEFAULT_API_MODEL, ProgressEvent, SorterConfig
 
 
@@ -71,6 +70,19 @@ DECISIONS_SETTINGS = {
     "decisions_margin": ("人物の1位と2位の最低差", "0.20"),
     "decisions_dominant_probability": ("中央の主役の最低確率", "0.85"),
 }
+DECISIONS_PROFILE_LABELS = {
+    "現行・単独判定": {},
+    "参考キャッシュ（試験）": {"decisions_cache_references": True},
+    "キャッシュなし（試験）": {"decisions_cache_mode": "off"},
+    "JPEG品質82（試験）": {"decisions_jpeg_quality": 82},
+    "2枚一括（試験）": {"decisions_batch_size": 2},
+    "4枚一括（試験）": {"decisions_batch_size": 4},
+    "参考キャッシュ＋2枚一括（試験）": {"decisions_cache_references": True, "decisions_batch_size": 2},
+    "GPU併用（試験）": {"decisions_gpu_first": True},
+    "GPU主役判定＋Decisions（比較用）": {"avatar_gpu_enabled": True},
+    "GPU主役判定＋直接GPT（比較用）": {"avatar_gpu_enabled": True, "avatar_direct_gpt": True},
+}
+DEFAULT_DECISIONS_PROFILE = next(iter(DECISIONS_PROFILE_LABELS))
 
 
 class SorterApp(tk.Tk):
@@ -99,6 +111,9 @@ class SorterApp(tk.Tk):
         self.decisions_settings_vars = {key: tk.StringVar(value=default)
                                        for key, (_, default) in DECISIONS_SETTINGS.items()}
         self.decisions_fallback_var = tk.BooleanVar(value=True)
+        self.decisions_profile_var = tk.StringVar(value=DEFAULT_DECISIONS_PROFILE)
+        self.upload_limit_var = tk.StringVar(value="無制限")
+        self.upload_files_var = tk.BooleanVar(value=False)
         self.model_var = tk.StringVar(value=DEFAULT_API_MODEL)
         self.top_k_var = tk.StringVar(value="4")
         self.local_confidence_var = tk.StringVar(value="0.78")
@@ -169,6 +184,11 @@ class SorterApp(tk.Tk):
         ttk.Button(self.class_frame, text="確認済み写真を参考に追加", command=self._add_reference).pack(side="right")
 
         self.settings_tabs = ttk.Notebook(outer)
+        network = ttk.Frame(outer)
+        network.pack(fill="x", pady=(8, 0))
+        ttk.Label(network, text="OpenAIへの上り上限（Mbps）").pack(side="left", padx=(0, 4))
+        ttk.Combobox(network, textvariable=self.upload_limit_var, state="readonly", width=7,
+                     values=("無制限", "0.25", "0.5", "1", "2", "5", "10")).pack(side="left")
         self.settings_tabs.pack(fill="x", pady=12)
         self.simple_settings = ttk.Frame(self.settings_tabs, padding=10)
         self.detailed_settings = ttk.Frame(self.settings_tabs, padding=4)
@@ -527,19 +547,32 @@ class SorterApp(tk.Tk):
             ttk.Label(panel, text=f"初期値 {default}").grid(row=row, column=2, sticky="w", padx=12)
         ttk.Checkbutton(panel, text="曖昧な写真をGPTで再判定（追加料金あり）",
                         variable=self.decisions_fallback_var).grid(row=7, column=0, columnspan=3, sticky="w", pady=4)
+        ttk.Label(panel, text="処理方式").grid(row=8, column=0, sticky="w", pady=4)
+        ttk.Combobox(panel, textvariable=self.decisions_profile_var, values=tuple(DECISIONS_PROFILE_LABELS),
+                     state="readonly", width=31).grid(row=8, column=1, sticky="w", pady=4)
         ttk.Button(panel, text="DecisionAPI設定を初期値へ戻す", command=self._reset_decisions_settings).grid(
-            row=8, column=0, columnspan=3, sticky="w", pady=5)
+            row=8, column=2, sticky="w", padx=12, pady=4)
         ttk.Button(panel, text="固定参考API／Decisionsを同じ写真で比較（写真移動なし）",
                    command=lambda: self._compare(['api1', 'decisions'])).grid(row=9, column=0, columnspan=3, sticky="w", pady=5)
-        ttk.Label(panel, text="曖昧な写真はGPTで再判定し、GPTでも確定できない写真は「要確認」へ。再判定には追加料金がかかります。\n"
-                  "中央の主役をソロ扱いする設定は「判定設定」で変更します。背景が大勢でも主役が明確なら個人に分類。\n"
-                  "低いしきい値は誤分類を増やす場合があります。確信度・確率は正答率ではありません。\n"
-                  "参考画像は各人物最大3枚（_local以外）。参考＋作業写真は1回128枚まで。ピンぼけ分類なし。\n"
-                  "処理記録を保存すると、確率・不採用理由・利用量がCSVと集計JSONに残ります。まず20枚でお試しください。",
-                  wraplength=720).grid(row=10, column=0, columnspan=3, sticky="w", pady=8)
+        ttk.Button(panel, text="単独／キャッシュ／一括／固定参考4枚を比較（写真移動なし）",
+                   command=lambda: self._compare(["decisions", "decisions_cached", "decisions_batch2", "decisions_batch4",
+                                                  "decisions_cached_batch2", "api4"])
+                   ).grid(row=10, column=0, columnspan=3, sticky="w", pady=5)
+        ttk.Label(panel, text="比較でも各方式のAPI料金がかかります。低いしきい値は誤分類を増やす場合があります。\n"
+                  "参考画像は各人物最大3枚（_local以外）。参考＋作業写真は1回128枚まで。ピンぼけ分類なし。",
+                  wraplength=720).grid(row=11, column=0, columnspan=3, sticky="w", pady=8)
+        ttk.Checkbutton(panel, text="GPT照合用の参考を一時保存して上り通信量を減らす",
+                        variable=self.upload_files_var).grid(row=12, column=0, columnspan=3, sticky="w")
+        ttk.Label(panel, text="DecisionAPIモードではGPT再判定に適用。OpenAIへの初回アップロードと、終了時の削除に時間がかかります。"
+                  "有効期限は1時間です。", wraplength=710).grid(row=13, column=0, columnspan=3, sticky="w", padx=(20, 0))
+        ttk.Button(panel, text="キャッシュ3方式の料金を比較（写真移動なし）",
+                   command=lambda: self._compare(["decisions", "decisions_cached", "decisions_cache_off"])
+                   ).grid(row=14, column=0, columnspan=3, sticky="w", pady=5)
 
     def _reset_decisions_settings(self):
         self.decisions_fallback_var.set(True)
+        self.decisions_profile_var.set(DEFAULT_DECISIONS_PROFILE)
+        self.upload_files_var.set(False)
         for key, (_, default) in DECISIONS_SETTINGS.items():
             self.decisions_settings_vars[key].set(default)
 
@@ -596,8 +629,11 @@ class SorterApp(tk.Tk):
             api_key=self.key_var.get().strip() or os.getenv("OPENAI_API_KEY"),
             jev_api_key=self.jev_key_var.get().strip() or os.getenv("JEV_API_Key"),
             max_files=int(self.max_files_var.get()), cache_dir=model_cache_dir(self.project_dir),
+            upload_limit_mbps=0. if self.upload_limit_var.get() == "無制限" else float(self.upload_limit_var.get()),
+            reuse_uploaded_references=not simple and self.upload_files_var.get(),
             **({'decisions_gpt_fallback': self.decisions_fallback_var.get()} if not simple else {}),
             **(self._decisions_config_values() if not simple and (mode == "decisions" or include_decisions) else {}),
+            **(DECISIONS_PROFILE_LABELS[self.decisions_profile_var.get()] if not simple and mode == "decisions" else {}),
         )
         if simple:
             return SorterConfig(**common, api_concurrency=4,
@@ -611,7 +647,7 @@ class SorterApp(tk.Tk):
             local_margin=float(self.local_margin_var.get()),
             api_concurrency=int(self.concurrency_var.get()),
             api_batch_size=int(self.batch_size_var.get()) if mode == "api" else 1,
-            dry_run=self.dry_run_var.get(),
+            dry_run=self.dry_run_var.get() or common.get("avatar_gpu_enabled", False),
             trust_local_scene=self.trust_scene_var.get() if mode == "regional" else False,
             allow_dominant_subject=self.dominant_var.get(),
             crowd_threshold=int(self.crowd_var.get()),
@@ -632,6 +668,9 @@ class SorterApp(tk.Tk):
                 'local_first': self.local_first_var,
                 'quality_filter': self.quality_var, 'quality_api_review': self.quality_api_var,
                 'decisions_gpt_fallback': self.decisions_fallback_var,
+                'decisions_profile': self.decisions_profile_var,
+                'upload_limit_mbps': self.upload_limit_var,
+                'reuse_uploaded_references': self.upload_files_var,
                 **self.jev_settings_vars, **self.decisions_settings_vars}
 
     def _load_preferences(self):
@@ -656,6 +695,10 @@ class SorterApp(tk.Tk):
                     variable.set(value)
                 elif key == 'concurrency' and str(value) in [str(n) for n in range(1, 9)]:
                     variable.set(str(value))
+                elif key == 'upload_limit_mbps' and value in ("無制限", "0.25", "0.5", "1", "2", "5", "10"):
+                    variable.set(value)
+                elif key == 'decisions_profile' and isinstance(value, str) and value in DECISIONS_PROFILE_LABELS:
+                    variable.set(value)
                 elif key in (JEV_SETTINGS | DECISIONS_SETTINGS) and type(value) in (str, int, float):
                     try:
                         parsed = int(str(value)) if key == "jev_min_features" else float(value)
@@ -778,7 +821,7 @@ class SorterApp(tk.Tk):
             return
         try:
             config = self._build_config(include_jev=bool(strategies and 'jev' in strategies),
-                                        include_decisions=bool(strategies and 'decisions' in strategies))
+                                        include_decisions=any(name.startswith("decisions") for name in strategies or ()))
             if not config.api_key:
                 raise ValueError("比較にはAPIキーが必要です")
             if strategies and 'jev' in strategies and not (config.jev_api_key or '').strip():
@@ -829,7 +872,7 @@ class SorterApp(tk.Tk):
         self.start_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
         self.progress_bar["value"] = 0
-        self.status_var.set("Decisions用の参考画像を準備中…" if config.mode == "decisions"
+        self.status_var.set("DecisionAPI用の参考画像を準備中…" if config.mode == "decisions"
                             else "準備中… 初回のローカルモデル読込には時間がかかります。")
         self._append_log(
             f"クラス「{self.class_var.get()}」を対象に処理を開始します。"
@@ -840,8 +883,10 @@ class SorterApp(tk.Tk):
             try:
                 sorter = PhotoSorter(config, progress=self._on_progress, cancel_event=self.cancel_event)
                 records = sorter.run()
-                self.events.put(("done", (records, config.model, sorter.elapsed_seconds, config.dry_run,
-                                         config.mode, self.cancel_event.is_set())))
+                report = build_completion_report(records, config.model, sorter.elapsed_seconds, config.dry_run,
+                    config.mode, self.cancel_event.is_set(), stopped_reason=sorter.decisions_stop_reason,
+                    unprocessed=sorter.unprocessed_images, decisions_run_details=sorter.decisions_run_details())
+                self.events.put(("done", report))
             except Exception as exc:
                 self.events.put(("error", safe_exception(exc)))
 
@@ -918,8 +963,7 @@ class SorterApp(tk.Tk):
                     )
                     self._append_log(self.status_var.get())
                 elif kind == "done":
-                    records, model, elapsed_seconds, dry_run, mode, cancelled = payload
-                    report = build_completion_report(records, model, elapsed_seconds, dry_run, mode, cancelled)
+                    report = payload
                     self._finish_ui()
                     self.status_var.set(report.status)
                     self._append_log(report.message + "\n\n" + report.details)

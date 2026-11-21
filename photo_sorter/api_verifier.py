@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from .log_safety import register_secrets
-
 import hashlib
+import os
+import ssl
+import sys
 import threading
 from dataclasses import asdict
 from pathlib import Path
 
+import certifi
 from openai import OpenAI, DefaultHttpxClient
 from typing import Literal
 from pydantic import BaseModel, Field
@@ -14,6 +16,7 @@ from pydantic import BaseModel, Field
 from .image_utils import image_to_data_url, open_rgb, pil_to_data_url
 from .catalog import file_sha256
 from .embedding_cache import ArtifactCache
+from .log_safety import register_secrets
 from .models import AvatarCountDecision, ReferenceIdentity, VisionDecision
 
 
@@ -123,28 +126,50 @@ def _subject_box(parsed):
 
 
 class ApiVerifier:
-    def __init__(self, api_key: str, model: str, max_side: int, cache_dir: Path | None = None) -> None:
+    upload_profile = "standard"
+    upload_limiter = None
+    reference_uploads = None
+
+    def __init__(self, api_key: str, model: str, max_side: int, cache_dir: Path | None = None,
+                 *, upload_profile: str = "standard") -> None:
         register_secrets(api_key)
+        self.upload_profile = upload_profile
+        self.upload_limiter = None
+        self.reference_uploads = None
         self._transport = threading.local()
+        http_options = {"event_hooks": {"request": [self._track_request]}}
+        if sys.platform == "win32" and not (os.getenv("SSL_CERT_FILE") or os.getenv("SSL_CERT_DIR")):
+            # Windowsで信頼済みのルート証明書も使用する
+            context = ssl.create_default_context()
+            context.load_verify_locations(cafile=certifi.where())
+            http_options["verify"] = context
         self.client = OpenAI(api_key=api_key, timeout=90.0, max_retries=2,
-                            http_client=DefaultHttpxClient(event_hooks={'request': [self._track_request]}))
+                            http_client=DefaultHttpxClient(**http_options))
         self.model = model
         self.max_side = max_side
-        self._reference_data_urls: dict[tuple[Path, int, int], str] = {}
+        self._reference_data_urls: dict[tuple[Path, int, int, str], str] = {}
         self._reference_cache_lock = threading.Lock()
         self._decision_cache = ArtifactCache(cache_dir / "api_decisions.sqlite3") if cache_dir else None
         self._request_locks: dict[str, threading.Lock] = {}
         self._request_locks_guard = threading.Lock()
 
     def _track_request(self, request):
-        if request.headers.get('x-stainless-retry-count', '0') != '0':
-            self._transport.retries = getattr(self._transport, 'retries', 0) + 1
+        if request.url.path.rstrip("/").endswith("/responses"):
+            if request.headers.get('x-stainless-retry-count', '0') != '0':
+                self._transport.retries = getattr(self._transport, 'retries', 0) + 1
+            self._transport.request_bytes = self.request_bytes() + int(request.headers.get("content-length", "0"))
+        if self.upload_limiter is not None:
+            self.upload_limiter.on_request(request)
 
     def reset_retry_count(self):
         self._transport.retries = 0
+        self._transport.request_bytes = 0
 
     def retry_count(self):
         return getattr(self._transport, 'retries', 0)
+
+    def request_bytes(self):
+        return getattr(self._transport, "request_bytes", 0)
 
     def count_and_quality(self, target: Path, boxes: list[list[float]]):
         """Stage two shares a request with count screening, avoiding a third pass."""
@@ -202,7 +227,8 @@ class ApiVerifier:
         cache = getattr(self, "_decision_cache", None)
         if cache is None:
             return self._count_uncached(target)
-        key = hashlib.sha256("\0".join(("count-v1", self.model, str(min(self.max_side, 768)),
+        preset = "count-v1" if self.upload_profile == "standard" else "count-v1-compact"
+        key = hashlib.sha256("\0".join((preset, self.model, str(min(self.max_side, 768)),
             COUNT_INSTRUCTIONS, str(_AvatarCountSchema.model_json_schema()), file_sha256(target))).encode()).hexdigest()
         with self._request_locks_guard:
             lock = self._request_locks.setdefault(key, threading.Lock())
@@ -233,7 +259,7 @@ class ApiVerifier:
                         {"type": "input_text", "text": "TARGET_IMAGE to screen:"},
                         {
                             "type": "input_image",
-                            "image_url": image_to_data_url(target, min(self.max_side, 768)),
+                            "image_url": image_to_data_url(target, min(self.max_side, 768), upload_profile=self.upload_profile),
                             "detail": "high",
                         },
                     ],
@@ -267,14 +293,19 @@ class ApiVerifier:
         references: list[ReferenceIdentity],
         cache_key: str,
         subject_box: list[float] | None = None,
+        *,
+        target_url: str | None = None,
     ) -> VisionDecision:
         references = sorted(references, key=lambda item: item.identity_id)
+        if self.upload_profile == "compact":
+            cache_key += ":upload-compact-v1"
         cache = getattr(self, "_decision_cache", None)
         def fetch():
-            if subject_box:
-                return self._verify_uncached(target, references, cache_key, subject_box=subject_box)
-            return self._verify_uncached(target, references, cache_key)
-        if cache is None:
+            options = {"subject_box": subject_box} if subject_box else {}
+            if target_url is not None:
+                options["target_url"] = target_url
+            return self._verify_uncached(target, references, cache_key, **options)
+        if cache is None or target_url is not None:
             return fetch()
         # Include actual bytes, prompt/schema and settings. Renames can reuse a result;
         # changed pixels, references, model or prompt cannot.
@@ -314,12 +345,15 @@ class ApiVerifier:
         references: list[ReferenceIdentity],
         cache_key: str,
         subject_box: list[float] | None = None,
+        *,
+        target_url: str | None = None,
     ) -> VisionDecision:
         content, cache_options = self._reference_content(references)
         allowed_ids = {identity.identity_id for identity in references}
         content.extend([
             {"type": "input_text", "text": "TARGET_IMAGE to classify:"},
-            {"type": "input_image", "image_url": image_to_data_url(target, self.max_side), "detail": "high"},
+            {"type": "input_image", "image_url": target_url or image_to_data_url(
+                target, self.max_side, upload_profile=self.upload_profile), "detail": "high"},
         ])
         if subject_box:
             with open_rgb(target) as image:
@@ -327,7 +361,7 @@ class ApiVerifier:
                 x0,y0,x1,y1 = subject_box
                 with image.crop((int(x0*w),int(y0*h),int(x1*w),int(y1*h))) as crop:
                     content.extend([{'type':'input_text','text':'FOREGROUND SUBJECT DETAIL from TARGET_IMAGE. Use its actual hair, face and clothes to match identity. This is the SAME person, not an extra avatar; count only in TARGET_IMAGE.'},
-                                    {'type':'input_image','image_url':pil_to_data_url(crop,1024),'detail':'high'}])
+                                    {'type':'input_image','image_url':pil_to_data_url(crop, 1024, upload_profile=self.upload_profile),'detail':'high'}])
         response = self.client.responses.parse(
             model=self.model, instructions=INSTRUCTIONS,
             input=[{"role": "user", "content": content}], text_format=_DecisionSchema,
@@ -348,6 +382,11 @@ class ApiVerifier:
             })
         decision = _validated_decision(parsed, allowed_ids)
         add_usage(decision, response_usage(response))
+        usage = getattr(response, "usage", None)
+        decision.usage_incomplete = usage is None or any(
+            type(getattr(usage, field, None)) is not int or getattr(usage, field) < 0
+            for field in ("input_tokens", "output_tokens")
+        )
         return decision
 
     def _reference_content(self, references: list[ReferenceIdentity]) -> tuple[list[dict], dict]:
@@ -367,13 +406,10 @@ class ApiVerifier:
                         "text": f"REFERENCE_ID: {identity.identity_id} (image {index})",
                     }
                 )
-                content.append(
-                    {
-                        "type": "input_image",
-                        "image_url": self._reference_url(reference_image),
-                        "detail": "low",
-                    }
-                )
+                url = self._reference_url(reference_image)
+                part = (self.reference_uploads.image_part(url, detail="low") if self.reference_uploads is not None
+                        else {"type": "input_image", "image_url": url, "detail": "low"})
+                content.append(part)
 
         cache_options: dict[str, object] = {}
         if self.model.lower().startswith(("gpt-5.6", "gpt-6")):
@@ -389,10 +425,11 @@ class ApiVerifier:
 
     def _reference_url(self, path: Path) -> str:
         stat = path.stat()
-        resolved = (path.resolve(), stat.st_size, stat.st_mtime_ns)
+        resolved = (path.resolve(), stat.st_size, stat.st_mtime_ns, self.upload_profile)
         with self._reference_cache_lock:
             if resolved not in self._reference_data_urls:
-                self._reference_data_urls[resolved] = image_to_data_url(path, 640)
+                self._reference_data_urls[resolved] = image_to_data_url(
+                    path, 640, upload_profile=self.upload_profile, reference=True)
             return self._reference_data_urls[resolved]
 
     @staticmethod
